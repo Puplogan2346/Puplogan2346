@@ -4,6 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#0f172a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icon.svg" />
   <title>Workday Checklist</title>
   <style>
     :root {
@@ -146,6 +151,10 @@
     .task.overdue .due-badge { color: var(--warn); font-weight: 600; }
     .note-preview { color: var(--muted); font-style: italic; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+    .reorder { display: flex; flex-direction: column; flex: none; }
+    .reorder .icon-btn { padding: 1px 6px; font-size: 0.7rem; }
+    .reorder .icon-btn:disabled { opacity: 0.25; cursor: default; background: transparent; color: var(--muted); }
+
     .actions { display: flex; gap: 2px; flex: none; align-items: center; }
     .icon-btn {
       background: transparent; color: var(--muted); font-size: 1rem; line-height: 1;
@@ -175,13 +184,30 @@
       display: flex; justify-content: space-between; align-items: center;
       margin-top: 18px; gap: 10px; flex-wrap: wrap;
     }
+    .footer-group { display: flex; gap: 8px; flex-wrap: wrap; }
     .footer-btn {
       background: transparent; border: 1px solid var(--border); color: var(--muted);
       padding: 9px 14px; font-size: 0.85rem; transition: all 0.15s ease;
     }
     .footer-btn:hover { color: var(--text); border-color: var(--muted); }
     .footer-btn.danger:hover { color: var(--danger); border-color: var(--danger); }
+    .footer-btn.accent { border-color: var(--accent); color: var(--accent); }
     .footer-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* Undo toast */
+    .toast {
+      position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 140%);
+      background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+      box-shadow: var(--shadow); padding: 12px 14px 12px 18px; display: flex; align-items: center;
+      gap: 14px; font-size: 0.9rem; z-index: 60; max-width: calc(100vw - 32px);
+      transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .toast.show { transform: translate(-50%, 0); }
+    .toast .toast-undo {
+      background: var(--accent-strong); color: #04121f; font-weight: 700;
+      padding: 7px 14px; font-size: 0.82rem;
+    }
+    .toast .toast-undo[hidden] { display: none; }
 
     /* Modal */
     .overlay {
@@ -274,9 +300,23 @@
     <ul class="list" id="list"></ul>
 
     <footer>
-      <button class="footer-btn" id="clearDone">Clear completed</button>
-      <button class="footer-btn danger" id="resetDay">Start a new day</button>
+      <div class="footer-group">
+        <button class="footer-btn" id="clearDone">Clear completed</button>
+        <button class="footer-btn" id="resetDay" title="Carry unfinished tasks into a fresh day and clear completed ones">Start a new day</button>
+      </div>
+      <div class="footer-group">
+        <button class="footer-btn" id="exportBtn" title="Download your tasks and templates as a JSON backup">⬇ Export</button>
+        <button class="footer-btn" id="importBtn" title="Restore from a JSON backup">⬆ Import</button>
+        <button class="footer-btn accent" id="installBtn" hidden>⊕ Install app</button>
+      </div>
     </footer>
+  </div>
+
+  <input type="file" id="importFile" accept="application/json,.json" hidden />
+
+  <div class="toast" id="toast" role="status" aria-live="polite">
+    <span id="toastMsg"></span>
+    <button class="toast-undo" id="toastUndo">Undo</button>
   </div>
 
   <!-- Templates modal -->
@@ -324,6 +364,8 @@
       tmplAddForm: q("tmplAddForm"), tmplText: q("tmplText"), tmplTime: q("tmplTime"),
       tmplList: q("tmplList"), applyTemplate: q("applyTemplate"), saveCurrentAsTemplate: q("saveCurrentAsTemplate"),
       banner: q("templateBanner"), bannerText: q("bannerText"), bannerApply: q("bannerApply"), bannerDismiss: q("bannerDismiss"),
+      toast: q("toast"), toastMsg: q("toastMsg"), toastUndo: q("toastUndo"),
+      exportBtn: q("exportBtn"), importBtn: q("importBtn"), importFile: q("importFile"), installBtn: q("installBtn"),
     };
 
     function q(id) { return document.getElementById(id); }
@@ -335,6 +377,21 @@
     function saveTemplates() { localStorage.setItem(KEYS.templates, JSON.stringify(templates)); }
     function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
     function todayKey() { return new Date().toLocaleDateString("en-CA"); } // YYYY-MM-DD
+
+    // ---------- Undo toast ----------
+    let toastTimer = null;
+    function snapshotTasks() { return JSON.parse(JSON.stringify(state.tasks)); }
+    function showToast(message, undoFn) {
+      el.toastMsg.textContent = message;
+      el.toastUndo.hidden = !undoFn;
+      el.toast.classList.add("show");
+      clearTimeout(toastTimer);
+      const dismiss = () => el.toast.classList.remove("show");
+      toastTimer = setTimeout(dismiss, 6000);
+      el.toastUndo.onclick = undoFn
+        ? () => { clearTimeout(toastTimer); dismiss(); undoFn(); }
+        : null;
+    }
 
     // ---------- Tasks ----------
     function addTask(text, due) {
@@ -349,7 +406,13 @@
       if (t.done) notified.add(id);
       save(); render();
     }
-    function remove(id) { state.tasks = state.tasks.filter((t) => t.id !== id); save(); render(); }
+    function remove(id) {
+      const t = find(id); if (!t) return;
+      const prev = snapshotTasks();
+      state.tasks = state.tasks.filter((x) => x.id !== id);
+      save(); render();
+      showToast(`Deleted “${t.text}”`, () => { state.tasks = prev; save(); render(); });
+    }
     function rename(id, text) { const t = find(id); if (t && text.trim()) t.text = text.trim(); save(); render(); }
     function setDue(id, due) { const t = find(id); if (!t) return; t.due = due; notified.delete(id); save(); render(); }
     function setNote(id, note) { const t = find(id); if (!t) return; t.note = note; save(); }
@@ -361,6 +424,13 @@
       if (f < 0 || tIdx < 0) return;
       const [m] = state.tasks.splice(f, 1);
       state.tasks.splice(tIdx, 0, m);
+      save(); render();
+    }
+    function moveBy(id, dir) {
+      const i = state.tasks.findIndex((t) => t.id === id);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= state.tasks.length) return;
+      [state.tasks[i], state.tasks[j]] = [state.tasks[j], state.tasks[i]];
       save(); render();
     }
 
@@ -423,6 +493,20 @@
       const handle = document.createElement("span");
       handle.className = "handle"; handle.textContent = "⋮⋮"; handle.setAttribute("aria-hidden", "true");
 
+      // up/down reorder controls (work on touch where drag-and-drop doesn't)
+      const idx = state.tasks.findIndex((x) => x.id === t.id);
+      const reorderCtl = document.createElement("div");
+      reorderCtl.className = "reorder";
+      const upBtn = document.createElement("button");
+      upBtn.className = "icon-btn"; upBtn.textContent = "▲"; upBtn.title = "Move up";
+      upBtn.setAttribute("aria-label", "Move task up"); upBtn.disabled = idx <= 0;
+      upBtn.addEventListener("click", () => moveBy(t.id, -1));
+      const downBtn = document.createElement("button");
+      downBtn.className = "icon-btn"; downBtn.textContent = "▼"; downBtn.title = "Move down";
+      downBtn.setAttribute("aria-label", "Move task down"); downBtn.disabled = idx >= state.tasks.length - 1;
+      downBtn.addEventListener("click", () => moveBy(t.id, 1));
+      reorderCtl.append(upBtn, downBtn);
+
       const check = document.createElement("button");
       check.className = "check";
       check.setAttribute("aria-label", t.done ? "Mark as not done" : "Mark as done");
@@ -478,7 +562,7 @@
       del.addEventListener("click", () => remove(t.id));
       actions.append(dueBtn, noteBtn, del);
 
-      main.append(handle, check, body, actions);
+      main.append(handle, reorderCtl, check, body, actions);
 
       // extras (due + note editors)
       const extras = document.createElement("div");
@@ -603,14 +687,30 @@
     });
 
     el.clearDone.addEventListener("click", () => {
-      if (!state.tasks.some((t) => t.done)) return;
-      if (confirm("Remove all completed tasks?")) {
-        state.tasks = state.tasks.filter((t) => !t.done); save(); render();
-      }
+      const doneCount = state.tasks.filter((t) => t.done).length;
+      if (doneCount === 0) return;
+      const prev = snapshotTasks();
+      state.tasks = state.tasks.filter((t) => !t.done);
+      save(); render();
+      showToast(`Cleared ${doneCount} completed task${doneCount > 1 ? "s" : ""}`, () => { state.tasks = prev; save(); render(); });
     });
+
+    // Start a new day: carry unfinished tasks forward, clear completed ones.
     el.resetDay.addEventListener("click", () => {
       if (state.tasks.length === 0) return;
-      if (confirm("Clear the whole list and start fresh?")) { state.tasks = []; save(); render(); }
+      const prev = snapshotTasks();
+      const carried = state.tasks.filter((t) => !t.done);
+      const cleared = state.tasks.length - carried.length;
+      state.tasks = carried;
+      save(); render();
+      if (templates.length > 0) {
+        el.bannerText.textContent = `New day! Apply your daily template (${templates.length} task${templates.length > 1 ? "s" : ""})?`;
+        el.banner.classList.add("show");
+      }
+      const msg = cleared > 0
+        ? `New day — ${carried.length} carried over, ${cleared} cleared`
+        : `New day — ${carried.length} task${carried.length === 1 ? "" : "s"} carried over`;
+      showToast(msg, () => { state.tasks = prev; save(); render(); });
     });
 
     // Templates modal
@@ -638,6 +738,61 @@
 
     // Reminders
     el.enableReminders.addEventListener("click", requestReminders);
+
+    // ---------- Backup: export / import ----------
+    el.exportBtn.addEventListener("click", () => {
+      const data = JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), tasks: state.tasks, templates }, null, 2);
+      const blob = new Blob([data], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `workday-checklist-${todayKey()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast("Backup downloaded", null);
+    });
+    el.importBtn.addEventListener("click", () => el.importFile.click());
+    el.importFile.addEventListener("change", () => {
+      const file = el.importFile.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const data = JSON.parse(reader.result);
+          if (!data || (!Array.isArray(data.tasks) && !Array.isArray(data.templates))) throw new Error("bad format");
+          const prev = { tasks: snapshotTasks(), templates: JSON.parse(JSON.stringify(templates)) };
+          if (Array.isArray(data.tasks)) state.tasks = data.tasks;
+          if (Array.isArray(data.templates)) templates = data.templates;
+          save(); saveTemplates(); render();
+          showToast("Backup imported", () => {
+            state.tasks = prev.tasks; templates = prev.templates;
+            save(); saveTemplates(); render();
+          });
+        } catch (err) {
+          alert("That doesn't look like a valid Workday Checklist backup file.");
+        }
+        el.importFile.value = "";
+      };
+      reader.readAsText(file);
+    });
+
+    // ---------- PWA: install prompt + service worker ----------
+    let deferredInstall = null;
+    window.addEventListener("beforeinstallprompt", (e) => {
+      e.preventDefault();
+      deferredInstall = e;
+      el.installBtn.hidden = false;
+    });
+    el.installBtn.addEventListener("click", async () => {
+      if (!deferredInstall) return;
+      deferredInstall.prompt();
+      await deferredInstall.userChoice;
+      deferredInstall = null;
+      el.installBtn.hidden = true;
+    });
+    window.addEventListener("appinstalled", () => { el.installBtn.hidden = true; });
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+    }
 
     // Keyboard: "/" focuses input, Esc closes modal
     document.addEventListener("keydown", (e) => {
