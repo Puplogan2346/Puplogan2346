@@ -35,6 +35,9 @@
     history: [],          // [{ day, completed, total }]
     onChange: function () {},
     onAuthChange: function () {},
+    onRecovery: function () {},   // fires when arriving from a password-reset link
+    onSync: function () {},       // fires with "syncing" | "synced" | "remote"
+    remoteUpdate: false,          // set when the last onChange came from realtime
 
     get cloud() { return this.mode === "cloud"; },
     get canEdit() {
@@ -61,6 +64,7 @@
         }
         // React to login / logout.
         sb.auth.onAuthStateChange(async (_event, session) => {
+          if (_event === "PASSWORD_RECOVERY") { this.onRecovery(); return; }
           if (session && session.user) {
             if (this.mode !== "cloud" || (this.user && this.user.id !== session.user.id)) {
               await this.enterCloud(session.user);
@@ -89,7 +93,8 @@
 
     async enterCloud(user) {
       this.mode = "cloud";
-      this.user = { id: user.id, email: user.email };
+      const meta = user.user_metadata || {};
+      this.user = { id: user.id, email: user.email, name: meta.display_name || user.email };
       await this.loadLists();
       await this.reload();
       this.subscribeRealtime();
@@ -109,6 +114,15 @@
       if (error) throw error;
     },
     async signOut() { if (sb) await sb.auth.signOut(); },
+    async resetPassword(email) {
+      const redirectTo = window.location.href.split("#")[0];
+      const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo });
+      if (error) throw error;
+    },
+    async updatePassword(password) {
+      const { error } = await sb.auth.updateUser({ password });
+      if (error) throw error;
+    },
 
     // ===================================================================
     // Lists (cloud only; local mode has a single implicit list)
@@ -218,8 +232,10 @@
       if (!trimmed) return;
       if (this.cloud) {
         const position = nextPosition(this.tasks);
-        await sb.from("tasks").insert({ list_id: this.currentListId, text: trimmed, due: due || "", position });
-        await this.reload();
+        await this._sync((async () => {
+          await sb.from("tasks").insert({ list_id: this.currentListId, text: trimmed, due: due || "", position });
+          await this.reload();
+        })());
       } else {
         this.tasks.push({ id: uid(), text: trimmed, done: false, createdAt: Date.now(), due: due || "", note: "" });
         this.persistLocal();
@@ -251,7 +267,7 @@
         if ("due" in patch) row.due = patch.due;
         if ("note" in patch) row.note = patch.note;
         if ("done" in patch) { row.done = patch.done; row.done_at = patch.done ? new Date().toISOString() : null; }
-        await sb.from("tasks").update(row).eq("id", id);
+        await this._sync(sb.from("tasks").update(row).eq("id", id));
       } else {
         this.persistLocal();
       }
@@ -260,7 +276,7 @@
 
     async removeTask(id) {
       this.tasks = this.tasks.filter((x) => x.id !== id);
-      if (this.cloud) await sb.from("tasks").delete().eq("id", id);
+      if (this.cloud) await this._sync(sb.from("tasks").delete().eq("id", id));
       else this.persistLocal();
       this.onChange();
     },
@@ -268,7 +284,7 @@
     async removeTasks(ids) {
       const set = new Set(ids);
       this.tasks = this.tasks.filter((x) => !set.has(x.id));
-      if (this.cloud) await sb.from("tasks").delete().in("id", ids);
+      if (this.cloud) await this._sync(sb.from("tasks").delete().in("id", ids));
       else this.persistLocal();
       this.onChange();
     },
@@ -329,7 +345,7 @@
       const byId = new Map(this.tasks.map((t) => [t.id, t]));
       this.tasks = orderedIds.map((id) => byId.get(id)).filter(Boolean);
       if (this.cloud) {
-        await Promise.all(this.tasks.map((t, i) => sb.from("tasks").update({ position: i }).eq("id", t.id)));
+        await this._sync(Promise.all(this.tasks.map((t, i) => sb.from("tasks").update({ position: i }).eq("id", t.id))));
       } else {
         this.persistLocal();
       }
@@ -420,15 +436,25 @@
       this._channel = sb
         .channel("list-" + this.currentListId)
         .on("postgres_changes", { event: "*", schema: "public", table: "tasks", filter: "list_id=eq." + this.currentListId }, async () => {
-          await this.reload(); this.onChange();
+          await this.reload(); this.remoteUpdate = true; this.onChange(); this.remoteUpdate = false; this.onSync("remote");
         })
         .on("postgres_changes", { event: "*", schema: "public", table: "templates", filter: "list_id=eq." + this.currentListId }, async () => {
-          await this.reload(); this.onChange();
+          await this.reload(); this.remoteUpdate = true; this.onChange(); this.remoteUpdate = false; this.onSync("remote");
         })
         .subscribe();
     },
     unsubscribeRealtime() {
       if (this._channel && sb) { sb.removeChannel(this._channel); this._channel = null; }
+    },
+
+    // ---- sync indicator: track in-flight cloud writes ----
+    _pending: 0,
+    async _sync(p) {
+      if (!this.cloud) return p;
+      this._pending++;
+      this.onSync("syncing");
+      try { return await p; }
+      finally { if (--this._pending === 0) this.onSync("synced"); }
     },
 
     // ---- local persistence ----

@@ -55,7 +55,25 @@ a { color: var(--accent); }
   flex-wrap: wrap; margin-bottom: 14px; font-size: 0.85rem;
 }
 .acct-muted { color: var(--muted); }
+.acct-email { color: var(--muted); opacity: 0.7; margin-left: 4px; }
 .account-bar code { background: var(--surface-2); padding: 1px 5px; border-radius: 5px; }
+
+/* Sync status indicator (cloud mode) */
+.sync-status {
+  margin-left: auto; font-size: 0.75rem; color: var(--muted);
+  white-space: nowrap; display: inline-flex; align-items: center; gap: 3px;
+  transition: color 0.2s ease;
+}
+.sync-status.ok { color: var(--done); }
+.sync-status.syncing { color: var(--accent); }
+.sync-status.offline { color: var(--danger); }
+
+/* Inline "Forgot password?" link button */
+.auth-link {
+  align-self: flex-start; background: none; border: none; padding: 4px 0;
+  color: var(--accent); font-size: 0.82rem; cursor: pointer; text-decoration: underline;
+}
+.auth-link:hover { color: var(--accent-strong); }
 
 header {
   display: flex; flex-wrap: wrap; align-items: center;
