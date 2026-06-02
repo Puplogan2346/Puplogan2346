@@ -16,8 +16,8 @@
  * browser with no login (great for trying it out or single-device use).
  */
 window.WC_CONFIG = {
-  supabaseUrl: "",
-  supabaseAnonKey: "",
+  supabaseUrl: "https://olvorvnqamkwtxvdenxo.supabase.co",
+  supabaseAnonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9sdm9ydm5xYW1rd3R4dmRlbnhvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA0MzAyMTksImV4cCI6MjA5NjAwNjIxOX0.MSM3taj0e5KBbFG88gikRtmVn0qUF0c7uVo43beTuAY",
 
   // Optional: site name shown in the header.
   appName: "Workday Checklist",
