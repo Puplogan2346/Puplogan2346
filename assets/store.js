@@ -94,7 +94,12 @@
     async enterCloud(user) {
       this.mode = "cloud";
       const meta = user.user_metadata || {};
-      this.user = { id: user.id, email: user.email, name: meta.display_name || user.email };
+      this.user = {
+        id: user.id,
+        email: user.email,
+        name: meta.display_name || meta.full_name || meta.name || user.email,
+        avatar: meta.avatar_url || meta.picture || "",
+      };
       await this.loadLists();
       await this.reload();
       this.subscribeRealtime();
@@ -111,6 +116,11 @@
       const { error } = await sb.auth.signUp({
         email, password, options: { data: { display_name: displayName || email } },
       });
+      if (error) throw error;
+    },
+    async signInWithGoogle() {
+      const redirectTo = window.location.href.split("#")[0];
+      const { error } = await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo } });
       if (error) throw error;
     },
     async signOut() { if (sb) await sb.auth.signOut(); },

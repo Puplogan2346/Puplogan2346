@@ -24,12 +24,15 @@
       this.titleEl = q("authTitle");
       this.subEl = q("authSub");
       this.forgotEl = q("authForgot");
+      this.googleBtn = q("googleBtn");
+      this.dividerEl = q("authDivider");
       this.mode = "signin";
 
       q("authClose").addEventListener("click", () => this.close());
       this.overlay.addEventListener("click", (e) => { if (e.target === this.overlay) this.close(); });
       this.toggleEl.addEventListener("click", () => this.setMode(this.mode === "signin" ? "signup" : "signin"));
       this.forgotEl && this.forgotEl.addEventListener("click", () => this.sendReset());
+      this.googleBtn && this.googleBtn.addEventListener("click", () => this.googleSignIn());
       this.form.addEventListener("submit", (e) => this.submit(e));
       document.addEventListener("keydown", (e) => { if (e.key === "Escape" && this.overlay.classList.contains("open")) this.close(); });
 
@@ -46,8 +49,11 @@
       }
       if (Store.cloud && Store.user) {
         const name = Store.user.name && Store.user.name !== Store.user.email ? Store.user.name : null;
+        const avatar = Store.user.avatar
+          ? '<img class="acct-avatar" src="' + escapeHtml(Store.user.avatar) + '" alt="" referrerpolicy="no-referrer" />'
+          : "";
         this.bar.innerHTML =
-          '<span class="acct-muted">Signed in as <strong>' + escapeHtml(name || Store.user.email) + "</strong>" +
+          '<span class="acct-muted acct-id">' + avatar + "Signed in as <strong>" + escapeHtml(name || Store.user.email) + "</strong>" +
           (name ? ' <span class="acct-email">' + escapeHtml(Store.user.email) + "</span>" : "") +
           "</span>" +
           '<span class="sync-status" id="syncStatus" role="status" aria-live="polite"></span>' +
@@ -89,7 +95,21 @@
       this.pwEl.autocomplete = recovery || signup ? "new-password" : "current-password";
       if (this.forgotEl) this.forgotEl.style.display = mode === "signin" ? "" : "none";
       if (this.subEl) this.subEl.style.display = recovery ? "none" : "";
+      if (this.googleBtn) this.googleBtn.style.display = recovery ? "none" : "";
+      if (this.dividerEl) this.dividerEl.style.display = recovery ? "none" : "";
       this.errEl.textContent = "";
+    },
+
+    async googleSignIn() {
+      this.errEl.textContent = "";
+      this.googleBtn.disabled = true;
+      try {
+        await Store.signInWithGoogle();   // redirects to Google, then back to the app
+      } catch (err) {
+        this.errEl.style.color = "var(--danger)";
+        this.errEl.textContent = friendlyAuthError(err);
+        this.googleBtn.disabled = false;
+      }
     },
 
     async sendReset() {

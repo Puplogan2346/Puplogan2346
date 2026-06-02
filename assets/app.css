@@ -55,7 +55,9 @@ a { color: var(--accent); }
   flex-wrap: wrap; margin-bottom: 14px; font-size: 0.85rem;
 }
 .acct-muted { color: var(--muted); }
+.acct-id { display: inline-flex; align-items: center; gap: 8px; }
 .acct-email { color: var(--muted); opacity: 0.7; margin-left: 4px; }
+.acct-avatar { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; vertical-align: middle; }
 .account-bar code { background: var(--surface-2); padding: 1px 5px; border-radius: 5px; }
 
 /* Sync status indicator (cloud mode) */
@@ -74,6 +76,18 @@ a { color: var(--accent); }
   color: var(--accent); font-size: 0.82rem; cursor: pointer; text-decoration: underline;
 }
 .auth-link:hover { color: var(--accent-strong); }
+
+/* Continue with Google */
+.btn-google {
+  width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px;
+  background: #fff; color: #1f1f1f; border: 1px solid #dadce0; border-radius: 10px;
+  padding: 12px 16px; font-size: 0.95rem; font-weight: 600; cursor: pointer;
+  transition: box-shadow 0.15s ease, background 0.15s ease;
+}
+.btn-google:hover { background: #f8f9fa; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2); }
+.btn-google:disabled { opacity: 0.6; cursor: default; }
+.auth-divider { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 0.8rem; margin: 14px 0; }
+.auth-divider::before, .auth-divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
 
 header {
   display: flex; flex-wrap: wrap; align-items: center;
