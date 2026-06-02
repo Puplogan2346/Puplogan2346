@@ -1,12 +1,12 @@
 // Service worker for offline support.
 // Bump CACHE_VERSION whenever the cached assets change to invalidate old caches.
-const CACHE_VERSION = "workday-checklist-v4";
+const CACHE_VERSION = "workday-checklist-v5";
 // Local assets that must be cached for the app to work offline.
 const ASSETS = [
   "./", "./index.html", "./manifest.json", "./icon.svg",
   "./icon-192.png", "./icon-512.png", "./icon-512-maskable.png", "./apple-touch-icon.png",
   "./assets/app.css", "./assets/config.js", "./assets/supabase.js",
-  "./assets/store.js", "./assets/history.js", "./assets/auth.js", "./assets/app.js",
+  "./assets/store.js", "./assets/history.js", "./assets/import.js", "./assets/auth.js", "./assets/app.js",
 ];
 // Best-effort extras (cross-origin); failure here must not block install.
 const OPTIONAL = ["https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"];
