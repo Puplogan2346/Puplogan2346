@@ -19,6 +19,7 @@ A plug-and-play checklist to track your work day. It runs as a **static site**
 - **Start a new day** carries unfinished tasks forward and clears completed ones
 - **History & streaks** — perfect-day tracking and a 14-day chart
 - **Accounts, sync & sharing** (cloud mode) — share a list with someone by email; edits sync live
+- **Sign in with Google** (one tap) or email + password
 - **Password reset by email** and a live **sync status** indicator (cloud mode)
 - Light/dark theme, keyboard shortcut (`/` to focus), accessibility-minded (focus-trapped dialogs, `Esc` to close)
 - Installable **PWA** with proper home-screen icons and offline support
@@ -56,6 +57,24 @@ serve over http — e.g. `python3 -m http.server` — rather than `file://`.)
 
 The anon key is meant to be public — Row Level Security in `schema.sql` is what
 protects each account's data.
+
+### Enable "Sign in with Google" (optional)
+
+The app shows a **Continue with Google** button automatically; it only works
+once Google is configured as a provider:
+
+1. In **Google Cloud Console** → APIs & Services → **Credentials**, create an
+   **OAuth client ID** (type *Web application*).
+2. Under **Authorized redirect URIs**, add your Supabase callback:
+   `https://YOUR-PROJECT.supabase.co/auth/v1/callback`.
+3. Copy the **Client ID** and **Client secret** into Supabase →
+   **Authentication → Providers → Google**, and enable it.
+4. Make sure your site URL is in Supabase → **Authentication → URL
+   Configuration** (Site URL + Redirect URLs), e.g.
+   `https://<user>.github.io/<repo>/`, so Google can return you to the app.
+
+Google sign-in brings over the account's name and profile photo. No Google
+app-verification review is needed for basic sign-in.
 
 ### Using Work vs Personal
 
