@@ -1,0 +1,10 @@
+{
+  "name": "workday-checklist",
+  "version": "2.0.0",
+  "description": "A plug-and-play workday checklist: local-first, with optional cloud accounts, sync, and sharing.",
+  "private": true,
+  "scripts": {
+    "test": "node tests/run.js"
+  },
+  "license": "MIT"
+}

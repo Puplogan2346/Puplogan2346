@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="description" content="A plug-and-play checklist to track your work day, with accounts, sync, and sharing." />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icon.svg" />
+  <link rel="stylesheet" href="assets/app.css" />
+  <title>Workday Checklist</title>
+</head>
+<body>
+  <a href="#taskInput" class="skip-link">Skip to add a task</a>
+  <div class="app">
+    <div class="account-bar" id="accountBar"></div>
+
+    <header>
+      <div class="title-wrap">
+        <h1 id="appName">Workday Checklist</h1>
+        <div class="date" id="date"></div>
+      </div>
+      <div class="header-tools">
+        <button class="pill" id="historyBtn" title="History &amp; streaks" aria-label="History and streaks">📊 History</button>
+        <button class="pill" id="themeToggle" title="Toggle light/dark theme" aria-label="Toggle theme">☀️</button>
+      </div>
+    </header>
+
+    <div class="list-switch hidden" id="listSwitch">
+      <label for="listSelect" class="acct-muted">List:</label>
+      <select id="listSelect" aria-label="Choose list"></select>
+      <button class="pill" id="newListBtn" title="New list">＋ New</button>
+      <button class="pill" id="shareBtn" title="Share this list">👥 Share</button>
+    </div>
+
+    <div class="banner" id="templateBanner">
+      <span id="bannerText">New day! Apply your daily template?</span>
+      <div class="b-actions">
+        <button class="btn-primary" id="bannerApply">Apply template</button>
+        <button class="pill" id="bannerDismiss">Not now</button>
+      </div>
+    </div>
+
+    <div class="progress-card">
+      <div class="progress-head">
+        <span class="count" id="count">0 of 0 done</span>
+        <span class="pct" id="pct">0%</span>
+      </div>
+      <div class="bar" id="bar"><span id="barFill"></span></div>
+      <div class="streak" id="streak"></div>
+    </div>
+
+    <form class="add-row" id="addForm">
+      <input type="text" id="taskInput" placeholder="Add a task for today…" autocomplete="off" autofocus />
+      <input type="time" id="timeInput" aria-label="Due time (optional)" />
+      <button type="submit" class="btn-add">Add</button>
+    </form>
+
+    <div class="toolbar">
+      <div class="filters" id="filters" role="group" aria-label="Filter tasks">
+        <button class="filter active" data-filter="all">All</button>
+        <button class="filter" data-filter="active">Active</button>
+        <button class="filter" data-filter="done">Done</button>
+      </div>
+      <div class="tool-actions">
+        <button class="pill" id="openTemplates">⭐ Templates</button>
+        <button class="pill" id="enableReminders" title="Enable browser reminders for due times">🔔 Reminders</button>
+      </div>
+    </div>
+
+    <ul class="list" id="list" aria-live="polite"></ul>
+
+    <footer>
+      <div class="footer-group">
+        <button class="footer-btn" id="clearDone">Clear completed</button>
+        <button class="footer-btn" id="resetDay" title="Carry unfinished tasks into a fresh day and clear completed ones">Start a new day</button>
+      </div>
+      <div class="footer-group">
+        <button class="footer-btn" id="exportBtn" title="Download a JSON backup">⬇ Export</button>
+        <button class="footer-btn" id="importBtn" title="Restore from a JSON backup">⬆ Import</button>
+        <button class="footer-btn accent" id="installBtn" hidden>⊕ Install app</button>
+      </div>
+    </footer>
+  </div>
+
+  <input type="file" id="importFile" accept="application/json,.json" hidden />
+
+  <div class="toast" id="toast" role="status" aria-live="polite">
+    <span id="toastMsg"></span>
+    <button class="toast-undo" id="toastUndo">Undo</button>
+  </div>
+
+  <!-- Auth modal -->
+  <div class="overlay" id="authOverlay">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+      <button class="modal-close" id="authClose" aria-label="Close">×</button>
+      <h2 id="authTitle">Sign in</h2>
+      <p class="sub">Sign in to sync across devices and share lists. Your data is protected per-account.</p>
+      <form id="authForm">
+        <div class="auth-rows">
+          <div class="extras-row" id="authNameRow" style="display:none;">
+            <input type="text" id="authName" placeholder="Display name (optional)" autocomplete="name" />
+          </div>
+          <input type="email" id="authEmail" placeholder="you@example.com" autocomplete="email" required />
+          <input type="password" id="authPassword" placeholder="Password" autocomplete="current-password" required />
+        </div>
+        <p class="field-error" id="authError"></p>
+        <div class="modal-actions">
+          <button type="button" class="auth-toggle" id="authToggle">New here? Create an account</button>
+          <button type="submit" class="btn-primary" id="authSubmit">Sign in</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Backend client (loads from CDN; absence simply means local mode) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="assets/config.js"></script>
+  <script src="assets/supabase.js"></script>
+  <script src="assets/store.js"></script>
+  <script src="assets/history.js"></script>
+  <script src="assets/auth.js"></script>
+  <script src="assets/app.js"></script>
+</body>
+</html>
