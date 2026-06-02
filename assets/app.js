@@ -20,6 +20,28 @@
 
   const el = {};
 
+  // ---- modal accessibility: focus trap + restore focus (shared with auth.js) ----
+  function modalTrap(overlay, modal) {
+    overlay._prevFocus = document.activeElement;
+    const sel = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+    const visible = () => [...modal.querySelectorAll(sel)].filter((n) => n.offsetParent !== null);
+    overlay._trap = (e) => {
+      if (e.key !== "Tab") return;
+      const f = visible(); if (!f.length) return;
+      const first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", overlay._trap);
+    const f = visible(); if (f.length) f[0].focus();
+  }
+  function modalRelease(overlay) {
+    if (overlay._trap) document.removeEventListener("keydown", overlay._trap);
+    if (overlay._prevFocus && overlay._prevFocus.focus) { try { overlay._prevFocus.focus(); } catch (e) {} }
+  }
+  WC.modalTrap = modalTrap;
+  WC.modalRelease = modalRelease;
+
   // =====================================================================
   // Init
   // =====================================================================
@@ -39,6 +61,10 @@
 
     Store.onChange = render;
     Store.onAuthChange = () => { notified.clear(); render(); Auth.render(); checkNewDay(); };
+    Store.onRecovery = () => Auth.openRecovery();
+    Store.onSync = (state) => Auth.setSync(state);
+    window.addEventListener("online", () => Auth.setSync("synced"));
+    window.addEventListener("offline", () => Auth.setSync("offline"));
 
     bindEvents();
     Auth.init();
@@ -443,9 +469,10 @@
     document.addEventListener("keydown", overlay._esc);
     document.body.appendChild(overlay);
     fill(modal);
+    modalTrap(overlay, modal);
     return overlay;
   }
-  function closeOverlay(overlay) { document.removeEventListener("keydown", overlay._esc); overlay.remove(); }
+  function closeOverlay(overlay) { document.removeEventListener("keydown", overlay._esc); modalRelease(overlay); overlay.remove(); }
 
   // =====================================================================
   // Events

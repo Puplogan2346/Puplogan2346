@@ -22,12 +22,16 @@
       this.submitBtn = q("authSubmit");
       this.toggleEl = q("authToggle");
       this.titleEl = q("authTitle");
+      this.subEl = q("authSub");
+      this.forgotEl = q("authForgot");
       this.mode = "signin";
 
       q("authClose").addEventListener("click", () => this.close());
       this.overlay.addEventListener("click", (e) => { if (e.target === this.overlay) this.close(); });
       this.toggleEl.addEventListener("click", () => this.setMode(this.mode === "signin" ? "signup" : "signin"));
+      this.forgotEl && this.forgotEl.addEventListener("click", () => this.sendReset());
       this.form.addEventListener("submit", (e) => this.submit(e));
+      document.addEventListener("keydown", (e) => { if (e.key === "Escape" && this.overlay.classList.contains("open")) this.close(); });
 
       this.render();
     },
@@ -41,10 +45,15 @@
         return;
       }
       if (Store.cloud && Store.user) {
+        const name = Store.user.name && Store.user.name !== Store.user.email ? Store.user.name : null;
         this.bar.innerHTML =
-          '<span class="acct-muted">Signed in as <strong>' + escapeHtml(Store.user.email) + "</strong></span>" +
+          '<span class="acct-muted">Signed in as <strong>' + escapeHtml(name || Store.user.email) + "</strong>" +
+          (name ? ' <span class="acct-email">' + escapeHtml(Store.user.email) + "</span>" : "") +
+          "</span>" +
+          '<span class="sync-status" id="syncStatus" role="status" aria-live="polite"></span>' +
           '<button class="pill" id="signOutBtn">Sign out</button>';
         q("signOutBtn").addEventListener("click", () => Store.signOut());
+        this.setSync(navigator.onLine ? "synced" : "offline");
       } else {
         this.bar.innerHTML =
           '<span class="acct-muted">Not signed in — using local data.</span>' +
@@ -53,28 +62,65 @@
       }
     },
 
-    open() { this.setMode("signin"); this.errEl.textContent = ""; this.overlay.classList.add("open"); this.emailEl.focus(); },
-    close() { this.overlay.classList.remove("open"); },
+    open() { this.setMode("signin"); this.errEl.textContent = ""; this._show(); this.emailEl.focus(); },
+    openRecovery() { this.setMode("recovery"); this.errEl.textContent = ""; this._show(); this.pwEl.focus(); },
+    _show() {
+      this._prevFocus = document.activeElement;
+      this.overlay.classList.add("open");
+      if (WC.modalTrap) WC.modalTrap(this.overlay, this.overlay.querySelector(".modal"));
+    },
+    close() {
+      this.overlay.classList.remove("open");
+      if (WC.modalRelease) WC.modalRelease(this.overlay);
+    },
 
     setMode(mode) {
       this.mode = mode;
       const signup = mode === "signup";
-      this.titleEl.textContent = signup ? "Create account" : "Sign in";
-      this.submitBtn.textContent = signup ? "Create account" : "Sign in";
+      const recovery = mode === "recovery";
+      this.titleEl.textContent = recovery ? "Set a new password" : signup ? "Create account" : "Sign in";
+      this.submitBtn.textContent = recovery ? "Save password" : signup ? "Create account" : "Sign in";
       this.toggleEl.textContent = signup ? "Have an account? Sign in" : "New here? Create an account";
+      this.toggleEl.style.display = recovery ? "none" : "";
       this.nameRow.style.display = signup ? "flex" : "none";
+      this.emailEl.style.display = recovery ? "none" : ""; // hide email field on recovery
+      this.emailEl.required = !recovery;
+      this.pwEl.placeholder = recovery ? "New password" : "Password";
+      this.pwEl.autocomplete = recovery || signup ? "new-password" : "current-password";
+      if (this.forgotEl) this.forgotEl.style.display = mode === "signin" ? "" : "none";
+      if (this.subEl) this.subEl.style.display = recovery ? "none" : "";
       this.errEl.textContent = "";
+    },
+
+    async sendReset() {
+      const email = this.emailEl.value.trim();
+      if (!email) { this.errEl.style.color = "var(--danger)"; this.errEl.textContent = "Enter your email above first, then tap “Forgot password?”."; this.emailEl.focus(); return; }
+      this.forgotEl.disabled = true;
+      try {
+        await Store.resetPassword(email);
+        this.errEl.style.color = "var(--done)";
+        this.errEl.textContent = "Password reset link sent — check your inbox (and spam).";
+      } catch (err) {
+        this.errEl.style.color = "var(--danger)";
+        this.errEl.textContent = friendlyAuthError(err);
+      } finally {
+        this.forgotEl.disabled = false;
+      }
     },
 
     async submit(e) {
       e.preventDefault();
       const email = this.emailEl.value.trim();
       const pw = this.pwEl.value;
-      if (!email || !pw) return;
+      if (this.mode !== "recovery" && (!email || !pw)) return;
+      if (this.mode === "recovery" && !pw) return;
       this.submitBtn.disabled = true;
       this.errEl.textContent = "";
       try {
-        if (this.mode === "signup") {
+        if (this.mode === "recovery") {
+          await Store.updatePassword(pw);
+          this.close();
+        } else if (this.mode === "signup") {
           await Store.signUp(email, pw, this.nameEl.value.trim());
           // Some projects require email confirmation; sign-in may not be immediate.
           this.errEl.style.color = "var(--done)";
@@ -86,12 +132,42 @@
         }
       } catch (err) {
         this.errEl.style.color = "var(--danger)";
-        this.errEl.textContent = (err && err.message) || "Something went wrong.";
+        this.errEl.textContent = friendlyAuthError(err);
       } finally {
         this.submitBtn.disabled = false;
       }
     },
+
+    setSync(state) {
+      const elx = q("syncStatus");
+      if (!elx) return;
+      if (!navigator.onLine) state = "offline";
+      const map = {
+        syncing: ["…", "Saving…", "syncing"],
+        synced: ["✓", "Synced", "ok"],
+        remote: ["⟳", "Updated", "ok"],
+        offline: ["•", "Offline", "offline"],
+      };
+      const [icon, text, cls] = map[state] || map.synced;
+      elx.className = "sync-status " + cls;
+      elx.textContent = icon + " " + text;
+      if (state === "syncing" || state === "remote") {
+        clearTimeout(this._syncT);
+        this._syncT = setTimeout(() => this.setSync(navigator.onLine ? "synced" : "offline"), 1200);
+      }
+    },
   };
+
+  function friendlyAuthError(err) {
+    const m = (err && err.message) || "";
+    if (/invalid login credentials/i.test(m)) return "Email or password is incorrect.";
+    if (/already registered|already exists/i.test(m)) return "That email already has an account — try signing in.";
+    if (/password should be at least|at least 6/i.test(m)) return "Password is too short (use at least 6 characters).";
+    if (/email not confirmed/i.test(m)) return "Please confirm your email first — check your inbox.";
+    if (/rate limit|too many/i.test(m)) return "Too many attempts. Please wait a moment and try again.";
+    if (/network|fetch|failed to/i.test(m)) return "Network problem — check your connection and try again.";
+    return m || "Something went wrong.";
+  }
 
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));

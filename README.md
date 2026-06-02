@@ -19,8 +19,9 @@ A plug-and-play checklist to track your work day. It runs as a **static site**
 - **Start a new day** carries unfinished tasks forward and clears completed ones
 - **History & streaks** — perfect-day tracking and a 14-day chart
 - **Accounts, sync & sharing** (cloud mode) — share a list with someone by email; edits sync live
-- Light/dark theme, keyboard shortcut (`/` to focus), accessibility-minded
-- Installable **PWA** with offline support
+- **Password reset by email** and a live **sync status** indicator (cloud mode)
+- Light/dark theme, keyboard shortcut (`/` to focus), accessibility-minded (focus-trapped dialogs, `Esc` to close)
+- Installable **PWA** with proper home-screen icons and offline support
 - **Export / import** JSON backups
 
 ## Run locally
@@ -48,6 +49,10 @@ serve over http — e.g. `python3 -m http.server` — rather than `file://`.)
 
 5. (Optional) In Supabase **Authentication → Providers**, decide whether email
    confirmation is required. With it off, sign-up logs you straight in.
+6. For **password reset** links to work, add your site URL under Supabase
+   **Authentication → URL Configuration** (Site URL and Redirect URLs) — e.g.
+   `https://<user>.github.io/<repo>/`. The “Forgot password?” link emails a
+   reset link back to the app, which then prompts for a new password.
 
 The anon key is meant to be public — Row Level Security in `schema.sql` is what
 protects each account's data.
@@ -94,5 +99,7 @@ assets/history.js       Streak & stats helpers
 assets/app.js           UI controller (rendering + interactions)
 supabase/schema.sql     Database tables, RLS policies, share RPC
 manifest.json, sw.js    PWA manifest + offline service worker
-icon.svg                App icon
+icon.svg, icon-*.png    App icons (scalable + PNG/maskable for installs)
+apple-touch-icon.png    iOS home-screen icon
+tools/generate_icons.py Regenerates the PNG icons from the SVG artwork
 ```

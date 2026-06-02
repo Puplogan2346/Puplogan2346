@@ -9,7 +9,8 @@
   <meta name="description" content="A plug-and-play checklist to track your work day, with accounts, sync, and sharing." />
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
-  <link rel="apple-touch-icon" href="icon.svg" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <link rel="stylesheet" href="assets/app.css" />
   <title>Workday Checklist</title>
 </head>
@@ -98,7 +99,7 @@
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="authTitle">
       <button class="modal-close" id="authClose" aria-label="Close">×</button>
       <h2 id="authTitle">Sign in</h2>
-      <p class="sub">Sign in to sync across devices and share lists. Your data is protected per-account.</p>
+      <p class="sub" id="authSub">Sign in to sync across devices and share lists. Your data is protected per-account.</p>
       <form id="authForm">
         <div class="auth-rows">
           <div class="extras-row" id="authNameRow" style="display:none;">
@@ -107,6 +108,7 @@
           <input type="email" id="authEmail" placeholder="you@example.com" autocomplete="email" required />
           <input type="password" id="authPassword" placeholder="Password" autocomplete="current-password" required />
         </div>
+        <button type="button" class="auth-link" id="authForgot">Forgot password?</button>
         <p class="field-error" id="authError"></p>
         <div class="modal-actions">
           <button type="button" class="auth-toggle" id="authToggle">New here? Create an account</button>
