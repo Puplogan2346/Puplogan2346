@@ -26,6 +26,8 @@ A plug-and-play checklist to track your work day. It runs as a **static site**
 - **Export / import** JSON backups
 - **Universal import** — paste a list, or drop in a calendar (`.ics`) or
   spreadsheet (`.csv`); each line/event/row becomes a task
+- **Google Calendar & Tasks** (cloud mode) — import today's events / your
+  Google Tasks, or push a list out to Google Tasks
 
 ## Run locally
 
@@ -77,6 +79,29 @@ once Google is configured as a provider:
 
 Google sign-in brings over the account's name and profile photo. No Google
 app-verification review is needed for basic sign-in.
+
+### Connect Google Calendar & Tasks (optional)
+
+The **Import** dialog can pull in today's **Google Calendar** events and your
+**Google Tasks**, and push the current list **out to Google Tasks**. This needs
+a bit more Google setup on top of sign-in:
+
+1. In **Google Cloud Console → APIs & Services → Library**, enable the
+   **Google Calendar API** and the **Google Tasks API**.
+2. In **OAuth consent screen**, add these scopes (used on demand):
+   - `.../auth/calendar.events.readonly`
+   - `.../auth/tasks`
+3. While the consent screen is in **Testing**, add your Google address under
+   **Test users** (only test users can use sensitive scopes until the app is
+   published & verified — fine for personal use).
+
+When you tap a Google action the first time, you're sent to Google to grant
+access, then returned to the app, which finishes the import/export
+automatically. The Google access token is used in-session only (no backend
+needed); the app never stores your Google password.
+
+> Note: "sensitive" scopes (Calendar/Tasks) require Google's verification
+> review before *anyone* (beyond test users) can use them.
 
 ### Using Work vs Personal
 
