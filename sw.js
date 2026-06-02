@@ -1,7 +1,11 @@
 // Service worker for offline support.
 // Bump CACHE_VERSION whenever the cached assets change to invalidate old caches.
-const CACHE_VERSION = "workday-checklist-v1";
-const ASSETS = ["./", "./index.html", "./manifest.json", "./icon.svg"];
+const CACHE_VERSION = "workday-checklist-v2";
+const ASSETS = [
+  "./", "./index.html", "./manifest.json", "./icon.svg",
+  "./assets/app.css", "./assets/config.js", "./assets/supabase.js",
+  "./assets/store.js", "./assets/history.js", "./assets/auth.js", "./assets/app.js",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
