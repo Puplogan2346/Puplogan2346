@@ -69,6 +69,18 @@ deploys the site to **GitHub Pages** on every push to `main`. Enable it once:
 Your app will be live at `https://<user>.github.io/<repo>/`, which is also what
 makes the PWA installable and enables cloud login.
 
+## Tests
+
+The data layer is covered by headless tests that exercise **both** backends
+(local storage and a mock of Supabase):
+
+```
+npm test        # or: node tests/run.js
+```
+
+CI runs them on every push and pull request
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
+
 ## Project layout
 
 ```

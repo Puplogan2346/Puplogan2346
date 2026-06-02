@@ -244,6 +244,7 @@
     async updateTask(id, patch) {
       const t = this.tasks.find((x) => x.id === id); if (!t) return;
       Object.assign(t, patch);
+      if ("done" in patch) t.doneAt = patch.done ? Date.now() : null;
       if (this.cloud) {
         const row = {};
         if ("text" in patch) row.text = patch.text;
@@ -252,7 +253,6 @@
         if ("done" in patch) { row.done = patch.done; row.done_at = patch.done ? new Date().toISOString() : null; }
         await sb.from("tasks").update(row).eq("id", id);
       } else {
-        if ("done" in patch) t.doneAt = patch.done ? Date.now() : null;
         this.persistLocal();
       }
       this.onChange();
