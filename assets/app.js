@@ -71,6 +71,14 @@
     await Store.init();
     render();
     checkNewDay();
+
+    // Resume a Google import/export that was started before the OAuth redirect.
+    const gIntent = Store.consumeGoogleIntent && Store.consumeGoogleIntent();
+    if (gIntent && Store.cloud && Store.hasGoogleToken && Store.hasGoogleToken()) {
+      toast("Connected to Google — finishing…", null);
+      runGoogleIntent(gIntent);
+    }
+
     el.taskInput.focus();
 
     // Reminders
@@ -481,7 +489,50 @@
       });
       fileBtn.addEventListener("click", () => el.importFile.click());
       modal.append(sub, ta, pasteBtn, divider, fileBtn, note);
+
+      // Google connections (cloud + signed in only).
+      if (Store.cloud && Store.user) {
+        const gdiv = document.createElement("div"); gdiv.className = "auth-divider"; gdiv.innerHTML = "<span>or connect Google</span>";
+        const gcal = document.createElement("button"); gcal.className = "btn-ghost import-full"; gcal.textContent = "📅 Import Google Calendar (today)";
+        const gtask = document.createElement("button"); gtask.className = "btn-ghost import-full"; gtask.textContent = "✓ Import Google Tasks";
+        const gpush = document.createElement("button"); gpush.className = "btn-ghost import-full"; gpush.textContent = "⤴ Send this list to Google Tasks";
+        gcal.addEventListener("click", () => googleAction("import-calendar"));
+        gtask.addEventListener("click", () => googleAction("import-tasks"));
+        gpush.addEventListener("click", () => googleAction("push-tasks"));
+        const gnote = document.createElement("p"); gnote.className = "tmpl-empty";
+        gnote.textContent = "First use sends you to Google to grant access, then returns here and finishes automatically.";
+        modal.append(gdiv, gcal, gtask, gpush, gnote);
+      }
     });
+  }
+
+  // Google import/export. If we don't have a fresh token, redirect to connect
+  // (stashing the intent); on return we resume via runGoogleIntent().
+  async function googleAction(intent) {
+    if (!Store.cloud || !Store.user) { toast("Sign in first to connect Google", null); return; }
+    if (!Store.hasGoogleToken()) {
+      toast("Redirecting to Google…", null);
+      try { await Store.connectGoogle(intent); } catch (e) { toast(googleErr(e), null); }
+      return; // page redirects to Google
+    }
+    await runGoogleIntent(intent);
+  }
+  async function runGoogleIntent(intent) {
+    try {
+      if (intent === "import-calendar") await importItems(await Store.fetchGoogleCalendarToday(), "Google Calendar");
+      else if (intent === "import-tasks") await importItems(await Store.fetchGoogleTasks(), "Google Tasks");
+      else if (intent === "push-tasks") {
+        const n = await Store.pushToGoogleTasks(Store.tasks);
+        toast(`Sent ${n} task${n !== 1 ? "s" : ""} to Google Tasks`, null);
+      }
+    } catch (e) { toast(googleErr(e), null); }
+    if (pendingImportOverlay && document.body.contains(pendingImportOverlay)) { closeOverlay(pendingImportOverlay); pendingImportOverlay = null; }
+  }
+  function googleErr(e) {
+    const m = (e && e.message) || "";
+    if (/not connected|expired/i.test(m)) return "Google connection needed — tap the button again to connect.";
+    if (/provider is not enabled|validation_failed/i.test(m)) return "Google isn't enabled in Supabase yet (see README).";
+    return m || "Google request failed.";
   }
 
   // Generic overlay builder

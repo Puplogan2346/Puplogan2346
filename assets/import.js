@@ -116,6 +116,38 @@
     return items;
   }
 
+  // ---- Google API JSON -> task items (pure transforms) ----
+  function gcalToItems(data) {
+    const out = [];
+    for (const ev of (data && data.items) || []) {
+      if (ev.status === "cancelled") continue;
+      const text = (ev.summary || "(no title)").trim();
+      let due = "";
+      if (ev.start && ev.start.dateTime) {
+        const d = new Date(ev.start.dateTime);
+        if (!isNaN(d.getTime())) due = normalizeTime(d.getHours() + ":" + String(d.getMinutes()).padStart(2, "0"));
+      }
+      out.push({ text, due });
+    }
+    return out;
+  }
+  function gtasksToItems(data) {
+    const out = [];
+    for (const t of (data && data.items) || []) {
+      if (t.status === "completed") continue;
+      const text = (t.title || "").trim();
+      if (text) out.push({ text, due: "" });
+    }
+    return out;
+  }
+  function itemsToGtasks(tasks) {
+    return (tasks || []).map((t) => {
+      const body = { title: (t.text || "(untitled)").trim() || "(untitled)" };
+      if (t.note) body.notes = t.note;
+      return body;
+    });
+  }
+
   // ---- Dispatch by file name / content ----
   function fromFile(name, content) {
     const ext = (name.split(".").pop() || "").toLowerCase();
@@ -125,5 +157,8 @@
     return { items: parseText(content) };
   }
 
-  WC.Import = { parseText, parseICS, parseCSV, parseCSVRows, fromFile, normalizeTime };
+  WC.Import = {
+    parseText, parseICS, parseCSV, parseCSVRows, fromFile, normalizeTime,
+    gcalToItems, gtasksToItems, itemsToGtasks,
+  };
 })();

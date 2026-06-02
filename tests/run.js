@@ -77,6 +77,27 @@ function testImport() {
   assert(f.json && f.data.tasks.length === 1, "routes .json to backup data");
   assert(I.fromFile("list.csv", "Buy milk,08:00").items[0].due === "08:00", "routes .csv to CSV parser");
   assert(I.fromFile("notes.txt", "Just a line").items[0].text === "Just a line", "routes other text to line parser");
+
+  // Google API transforms
+  const cal = I.gcalToItems({ items: [
+    { summary: "Sync", status: "confirmed", start: { dateTime: "2024-01-15T14:30:00Z" } },
+    { summary: "Off-site", start: { date: "2024-01-16" } },
+    { summary: "Canceled", status: "cancelled", start: { dateTime: "2024-01-15T10:00:00Z" } },
+  ] });
+  assert(cal.length === 2, "gcal: skips cancelled events");
+  assert(cal[0].text === "Sync" && /^\d{2}:\d{2}$/.test(cal[0].due), "gcal: timed event yields a due time");
+  assert(cal[1].text === "Off-site" && cal[1].due === "", "gcal: all-day event has no due");
+
+  const gt = I.gtasksToItems({ items: [
+    { title: "Buy milk", status: "needsAction" },
+    { title: "Done thing", status: "completed" },
+    { title: "  ", status: "needsAction" },
+  ] });
+  assert(gt.length === 1 && gt[0].text === "Buy milk", "gtasks: only active, titled tasks");
+
+  const push = I.itemsToGtasks([{ text: "Task A", note: "hi" }, { text: "Task B" }]);
+  assert(push[0].title === "Task A" && push[0].notes === "hi", "itemsToGtasks maps title + notes");
+  assert(push[1].title === "Task B" && !("notes" in push[1]), "itemsToGtasks omits empty notes");
 }
 
 async function testLocal() {

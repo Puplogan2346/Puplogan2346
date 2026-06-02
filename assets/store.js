@@ -38,6 +38,8 @@
     onRecovery: function () {},   // fires when arriving from a password-reset link
     onSync: function () {},       // fires with "syncing" | "synced" | "remote"
     remoteUpdate: false,          // set when the last onChange came from realtime
+    providerToken: null,          // Google OAuth access token (set right after sign-in)
+    googleScopes: "https://www.googleapis.com/auth/calendar.events.readonly https://www.googleapis.com/auth/tasks",
 
     get cloud() { return this.mode === "cloud"; },
     get canEdit() {
@@ -58,12 +60,14 @@
       if (WC.cloudEnabled && sb) {
         const { data } = await sb.auth.getSession();
         if (data && data.session) {
+          this.providerToken = data.session.provider_token || null;
           await this.enterCloud(data.session.user);
         } else {
           this.enterLocal();
         }
         // React to login / logout.
         sb.auth.onAuthStateChange(async (_event, session) => {
+          if (session && session.provider_token) this.providerToken = session.provider_token;
           if (_event === "PASSWORD_RECOVERY") { this.onRecovery(); return; }
           if (session && session.user) {
             if (this.mode !== "cloud" || (this.user && this.user.id !== session.user.id)) {
@@ -122,6 +126,65 @@
       const redirectTo = window.location.href.split("#")[0];
       const { error } = await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo } });
       if (error) throw error;
+    },
+
+    // ---- Google data: connect (with API scopes), read, and push ----
+    hasGoogleToken() { return !!this.providerToken; },
+    async connectGoogle(intent) {
+      // Stash what to do after the OAuth round-trip, then redirect to Google.
+      if (intent) localStorage.setItem("wc_google_intent", intent);
+      const redirectTo = window.location.href.split("#")[0];
+      const { error } = await sb.auth.signInWithOAuth({
+        provider: "google",
+        options: { scopes: this.googleScopes, redirectTo, queryParams: { access_type: "offline", prompt: "consent" } },
+      });
+      if (error) throw error;
+    },
+    consumeGoogleIntent() {
+      const i = localStorage.getItem("wc_google_intent");
+      if (i) localStorage.removeItem("wc_google_intent");
+      return i;
+    },
+    async googleFetch(url, opts) {
+      if (!this.providerToken) throw new Error("Not connected to Google.");
+      const res = await fetch(url, Object.assign(
+        { headers: { Authorization: "Bearer " + this.providerToken, "Content-Type": "application/json" } },
+        opts || {}
+      ));
+      if (res.status === 401 || res.status === 403) { this.providerToken = null; throw new Error("Google session expired — please connect again."); }
+      if (!res.ok) throw new Error("Google API error (" + res.status + ")");
+      return res.status === 204 ? null : res.json();
+    },
+    async fetchGoogleCalendarToday() {
+      const now = new Date();
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+      const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toISOString();
+      const url = "https://www.googleapis.com/calendar/v3/calendars/primary/events?singleEvents=true&orderBy=startTime" +
+        "&timeMin=" + encodeURIComponent(start) + "&timeMax=" + encodeURIComponent(end);
+      return WC.Import.gcalToItems(await this.googleFetch(url));
+    },
+    async _defaultTaskListId() {
+      const lists = await this.googleFetch("https://tasks.googleapis.com/tasks/v1/users/@me/lists");
+      return lists && lists.items && lists.items[0] ? lists.items[0].id : "@default";
+    },
+    async fetchGoogleTasks() {
+      const listId = await this._defaultTaskListId();
+      const data = await this.googleFetch(
+        "https://tasks.googleapis.com/tasks/v1/lists/" + encodeURIComponent(listId) + "/tasks?showCompleted=false&maxResults=100"
+      );
+      return WC.Import.gtasksToItems(data);
+    },
+    async pushToGoogleTasks(tasks) {
+      const listId = await this._defaultTaskListId();
+      let n = 0;
+      for (const body of WC.Import.itemsToGtasks(tasks)) {
+        await this.googleFetch(
+          "https://tasks.googleapis.com/tasks/v1/lists/" + encodeURIComponent(listId) + "/tasks",
+          { method: "POST", body: JSON.stringify(body) }
+        );
+        n++;
+      }
+      return n;
     },
     async signOut() { if (sb) await sb.auth.signOut(); },
     async resetPassword(email) {

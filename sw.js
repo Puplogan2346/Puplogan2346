@@ -1,6 +1,6 @@
 // Service worker for offline support.
 // Bump CACHE_VERSION whenever the cached assets change to invalidate old caches.
-const CACHE_VERSION = "workday-checklist-v5";
+const CACHE_VERSION = "workday-checklist-v6";
 // Local assets that must be cached for the app to work offline.
 const ASSETS = [
   "./", "./index.html", "./manifest.json", "./icon.svg",
