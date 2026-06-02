@@ -455,6 +455,35 @@
     });
   }
 
+  // Import: paste a list, or bring in a file (.ics / .csv / .json / text)
+  let pendingImportOverlay = null;
+  async function importItems(items, label) {
+    if (!items || !items.length) { toast("Nothing to import" + (label ? " from " + label : ""), null); return; }
+    const prev = snapshot();
+    await Store.addTasksBulk(items);
+    const n = items.length;
+    toast(`Imported ${n} task${n > 1 ? "s" : ""}`, Store.cloud ? null : () => Store.replaceTasks(prev));
+  }
+  function openImport() {
+    pendingImportOverlay = buildOverlay("Import tasks", (modal) => {
+      const sub = document.createElement("p"); sub.className = "sub";
+      sub.textContent = "Bring in a list from anywhere — paste it below, or import a file.";
+      const ta = document.createElement("textarea"); ta.className = "import-paste";
+      ta.placeholder = 'One task per line. Optional time at the end, e.g. "Standup 09:30".';
+      const pasteBtn = document.createElement("button"); pasteBtn.className = "btn-primary import-full"; pasteBtn.textContent = "Import pasted tasks";
+      const divider = document.createElement("div"); divider.className = "auth-divider"; divider.innerHTML = "<span>or</span>";
+      const fileBtn = document.createElement("button"); fileBtn.className = "btn-ghost import-full"; fileBtn.textContent = "Choose a file (.ics, .csv, .json, .txt)";
+      const note = document.createElement("p"); note.className = "tmpl-empty";
+      note.textContent = "Calendar (.ics) events and spreadsheet (.csv) rows become tasks; JSON backups are restored.";
+      pasteBtn.addEventListener("click", async () => {
+        await importItems(WC.Import.parseText(ta.value), "paste");
+        closeOverlay(pendingImportOverlay); pendingImportOverlay = null;
+      });
+      fileBtn.addEventListener("click", () => el.importFile.click());
+      modal.append(sub, ta, pasteBtn, divider, fileBtn, note);
+    });
+  }
+
   // Generic overlay builder
   function buildOverlay(title, fill) {
     const overlay = document.createElement("div"); overlay.className = "overlay open";
@@ -527,18 +556,24 @@
       a.href = url; a.download = `workday-checklist-${WC.todayKey()}.json`; a.click(); URL.revokeObjectURL(url);
       toast("Backup downloaded", null);
     });
-    el.importBtn.addEventListener("click", () => el.importFile.click());
+    el.importBtn.addEventListener("click", openImport);
     el.importFile.addEventListener("change", () => {
       const file = el.importFile.files[0]; if (!file) return;
       const reader = new FileReader();
       reader.onload = async () => {
         try {
-          const data = JSON.parse(reader.result);
-          if (!data || (!Array.isArray(data.tasks) && !Array.isArray(data.templates))) throw new Error("bad");
-          const prev = snapshot();
-          await Store.importData(data);
-          toast(Store.cloud ? "Backup imported into this list" : "Backup imported", Store.cloud ? null : () => Store.replaceTasks(prev));
-        } catch (e) { alert("That doesn't look like a valid Workday Checklist backup file."); }
+          const parsed = WC.Import.fromFile(file.name, reader.result);
+          if (parsed.json) {
+            const data = parsed.data;
+            if (!data || (!Array.isArray(data.tasks) && !Array.isArray(data.templates))) throw new Error("bad");
+            const prev = snapshot();
+            await Store.importData(data);
+            toast(Store.cloud ? "Backup imported into this list" : "Backup imported", Store.cloud ? null : () => Store.replaceTasks(prev));
+          } else {
+            await importItems(parsed.items, file.name);
+          }
+          if (pendingImportOverlay && document.body.contains(pendingImportOverlay)) { closeOverlay(pendingImportOverlay); pendingImportOverlay = null; }
+        } catch (e) { alert("Sorry — I couldn't read that file. Supported types: .ics calendar, .csv, .json backup, or a plain text list."); }
         el.importFile.value = "";
       };
       reader.readAsText(file);

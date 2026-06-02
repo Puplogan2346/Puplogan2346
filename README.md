@@ -24,6 +24,8 @@ A plug-and-play checklist to track your work day. It runs as a **static site**
 - Light/dark theme, keyboard shortcut (`/` to focus), accessibility-minded (focus-trapped dialogs, `Esc` to close)
 - Installable **PWA** with proper home-screen icons and offline support
 - **Export / import** JSON backups
+- **Universal import** — paste a list, or drop in a calendar (`.ics`) or
+  spreadsheet (`.csv`); each line/event/row becomes a task
 
 ## Run locally
 

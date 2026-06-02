@@ -89,6 +89,10 @@ a { color: var(--accent); }
 .auth-divider { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 0.8rem; margin: 14px 0; }
 .auth-divider::before, .auth-divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
 
+/* Import modal */
+.import-paste { width: 100%; min-height: 120px; resize: vertical; padding: 12px 14px; margin-bottom: 12px; font: inherit; }
+.import-full { width: 100%; }
+
 header {
   display: flex; flex-wrap: wrap; align-items: center;
   justify-content: space-between; gap: 10px; margin-bottom: 14px;

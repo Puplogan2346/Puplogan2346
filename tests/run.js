@@ -44,7 +44,39 @@ function bootstrap({ cloud }) {
   load("supabase.js");
   load("store.js");
   load("history.js");
+  load("import.js");
   return { WC: win.WC, fake };
+}
+
+function testImport() {
+  console.log("\nUniversal import parsers:");
+  const { WC } = bootstrap({ cloud: false });
+  const I = WC.Import;
+
+  const txt = I.parseText("Email inbox\n- Standup 09:30\n* Review @ 5:00\n\n[ ] Plan day");
+  assert(txt.length === 4, "parses one task per non-empty line");
+  assert(txt[0].text === "Email inbox" && txt[0].due === "", "plain line, no time");
+  assert(txt[1].text === "Standup" && txt[1].due === "09:30", "strips bullet + trailing time");
+  assert(txt[2].text === "Review" && txt[2].due === "05:00", "handles '@ H:MM' and pads hour");
+  assert(txt[3].text === "Plan day", "strips a checkbox marker");
+
+  const ics = I.parseICS(
+    "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:Team sync\r\nDTSTART;TZID=America/New_York:20240115T143000\r\nEND:VEVENT\r\n" +
+    "BEGIN:VEVENT\r\nSUMMARY:All-day off-site\r\nDTSTART;VALUE=DATE:20240116\r\nEND:VEVENT\r\nEND:VCALENDAR"
+  );
+  assert(ics.length === 2, "parses each VEVENT");
+  assert(ics[0].text === "Team sync" && ics[0].due === "14:30", "event summary + local start time -> due");
+  assert(ics[1].text === "All-day off-site" && ics[1].due === "", "all-day event has no due time");
+
+  const csv = I.parseCSV('Task,Due\n"Pay invoice, urgent",09:00\nCall vendor,\n');
+  assert(csv.length === 2, "parses CSV rows with header");
+  assert(csv[0].text === "Pay invoice, urgent" && csv[0].due === "09:00", "respects quoted comma + due column");
+  assert(csv[1].text === "Call vendor" && csv[1].due === "", "missing due is empty");
+
+  const f = I.fromFile("backup.json", '{"tasks":[{"text":"x"}]}');
+  assert(f.json && f.data.tasks.length === 1, "routes .json to backup data");
+  assert(I.fromFile("list.csv", "Buy milk,08:00").items[0].due === "08:00", "routes .csv to CSV parser");
+  assert(I.fromFile("notes.txt", "Just a line").items[0].text === "Just a line", "routes other text to line parser");
 }
 
 async function testLocal() {
@@ -119,6 +151,7 @@ async function testCloud() {
 (async () => {
   await testLocal();
   await testCloud();
+  testImport();
   console.log("");
   if (failures) { console.error(failures + " assertion(s) failed."); process.exit(1); }
   console.log("All tests passed.");
