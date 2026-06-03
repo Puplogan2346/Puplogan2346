@@ -15,7 +15,11 @@ A plug-and-play checklist to track your work day. It runs as a **static site**
 - Reorder by drag handle or ▲▼ buttons (touch-friendly)
 - **Due times** with overdue highlighting and optional browser **reminders**
 - **Per-task notes**
-- **Daily templates** — recurring tasks you can apply in one click or each new day
+- **Quick-add** — type the time and importance inline, e.g. `Email Bob 3pm !`
+  (→ task "Email Bob", due 3:00 PM, flagged)
+- **Flag important tasks** with a dedicated **Flagged** filter
+- **Daily templates** — recurring tasks you can apply in one click or each new
+  day, optionally **repeating only on chosen weekdays**
 - **Start a new day** carries unfinished tasks forward and clears completed ones
 - **History & streaks** — perfect-day tracking and a 14-day chart
 - **Accounts, sync & sharing** (cloud mode) — share a list with someone by email; edits sync live

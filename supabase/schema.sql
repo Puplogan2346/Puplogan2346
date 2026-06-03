@@ -60,6 +60,7 @@ create table if not exists public.tasks (
   done boolean not null default false,
   due text default '',            -- "HH:MM" local time, or empty
   note text default '',
+  flagged boolean not null default false,
   position double precision not null default 0,
   created_at timestamptz not null default now(),
   done_at timestamptz
@@ -74,9 +75,14 @@ create table if not exists public.templates (
   list_id uuid not null references public.lists (id) on delete cascade,
   text text not null,
   due text default '',
+  days text default '',           -- comma list of weekdays 0..6 (Sun..Sat); empty = every day
   position double precision not null default 0
 );
 create index if not exists templates_list_id_idx on public.templates (list_id);
+
+-- Upgrades for existing databases (safe to re-run).
+alter table public.tasks add column if not exists flagged boolean not null default false;
+alter table public.templates add column if not exists days text not null default '';
 
 -- ---------------------------------------------------------------------------
 -- History: one row per list per day, for streaks & stats.
