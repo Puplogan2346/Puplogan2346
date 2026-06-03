@@ -1,6 +1,6 @@
 // Service worker for offline support.
 // Bump CACHE_VERSION whenever the cached assets change to invalidate old caches.
-const CACHE_VERSION = "workday-checklist-v8";
+const CACHE_VERSION = "workday-checklist-v9";
 // Local assets that must be cached for the app to work offline.
 const ASSETS = [
   "./", "./index.html", "./manifest.json", "./icon.svg",
@@ -25,6 +25,34 @@ self.addEventListener("activate", (event) => {
     caches.keys().then((keys) =>
       Promise.all(keys.filter((k) => k !== CACHE_VERSION).map((k) => caches.delete(k)))
     ).then(() => self.clients.claim())
+  );
+});
+
+// Push reminders: show a notification when the server pushes a due task.
+self.addEventListener("push", (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (e) { data = { title: event.data && event.data.text() }; }
+  const title = data.title || "⏰ Task due";
+  const options = {
+    body: data.body || "",
+    tag: data.tag || "wc-reminder",
+    icon: "./icon-192.png",
+    badge: "./icon-192.png",
+    data: { url: data.url || "./index.html" },
+    requireInteraction: false,
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// Focus (or open) the app when a reminder is tapped.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || "./index.html";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      for (const c of list) { if ("focus" in c) return c.focus(); }
+      if (self.clients.openWindow) return self.clients.openWindow(url);
+    })
   );
 });
 

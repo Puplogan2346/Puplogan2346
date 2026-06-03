@@ -27,6 +27,14 @@
     });
   }
   function isOffline() { return typeof navigator !== "undefined" && navigator && navigator.onLine === false; }
+  function urlB64ToUint8(base64) {
+    const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+    const b64 = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const raw = atob(b64);
+    const arr = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+    return arr;
+  }
   function todayKey() { return new Date().toLocaleDateString("en-CA"); } // YYYY-MM-DD
   function loadJSON(key, fallback) {
     try { const r = localStorage.getItem(key); if (r) return JSON.parse(r); } catch (e) {}
@@ -200,6 +208,48 @@
       return n;
     },
     async signOut() { if (sb) await sb.auth.signOut(); },
+
+    // ---- Push reminders (fire even when the app is closed) ----
+    pushEnabled: false,
+    get pushSupported() {
+      return typeof navigator !== "undefined" && "serviceWorker" in navigator &&
+        typeof window !== "undefined" && "PushManager" in window && "Notification" in window;
+    },
+    async refreshPushState() {
+      if (!this.cloud || !this.pushSupported) { this.pushEnabled = false; return; }
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        this.pushEnabled = !!(await reg.pushManager.getSubscription());
+      } catch (e) { this.pushEnabled = false; }
+    },
+    async enablePush() {
+      if (!this.cloud) throw new Error("Sign in to enable push reminders.");
+      const key = (window.WC_CONFIG || {}).vapidPublicKey;
+      if (!key) throw new Error("Push reminders aren't configured yet.");
+      if (!this.pushSupported) throw new Error("This browser doesn't support push notifications.");
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") throw new Error("Notifications are blocked.");
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8(key) });
+      const j = sub.toJSON();
+      const { error } = await sb.from("push_subscriptions").upsert(
+        { user_id: this.user.id, endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth },
+        { onConflict: "endpoint" }
+      );
+      if (error) throw error;
+      try { const tz = Intl.DateTimeFormat().resolvedOptions().timeZone; if (tz) await sb.from("profiles").update({ timezone: tz }).eq("id", this.user.id); } catch (e) {}
+      this.pushEnabled = true;
+      return true;
+    },
+    async disablePush() {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) { await sb.from("push_subscriptions").delete().eq("endpoint", sub.endpoint); await sub.unsubscribe(); }
+      } catch (e) {}
+      this.pushEnabled = false;
+    },
     async resetPassword(email) {
       const redirectTo = window.location.href.split("#")[0];
       const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo });

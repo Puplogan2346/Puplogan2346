@@ -14,6 +14,8 @@ A plug-and-play checklist to track your work day. It runs as a **static site**
 - Add / complete / edit (double-click) / delete tasks, with **undo** on deletes
 - Reorder by drag handle or ▲▼ buttons (touch-friendly)
 - **Due times** with overdue highlighting and optional browser **reminders**
+  (in-tab by default; **push reminders that fire when the app is closed** once
+  the reminder function is deployed — see below)
 - **Per-task notes**
 - **Quick-add** — type the time and importance inline, e.g. `Email Bob 3pm !`
   (→ task "Email Bob", due 3:00 PM, flagged)
@@ -67,6 +69,37 @@ serve over http — e.g. `python3 -m http.server` — rather than `file://`.)
 
 The anon key is meant to be public — Row Level Security in `schema.sql` is what
 protects each account's data.
+
+### Push reminders that fire when the app is closed (optional, advanced)
+
+By default, due-time reminders only fire while the app is open in a tab. To get
+notifications even when it's closed, deploy the included reminder function. This
+needs the [Supabase CLI](https://supabase.com/docs/guides/cli).
+
+1. **Run the migration** (`supabase/migrate-push.sql`) in SQL Editor — adds the
+   `push_subscriptions` table, `tasks.notified_at`, and `profiles.timezone`.
+2. **Generate VAPID keys** (one-time):
+   ```
+   npx web-push generate-vapid-keys
+   ```
+3. **Add the public key** to `assets/config.js` → `vapidPublicKey`.
+4. **Set the function secrets** (private key stays server-side):
+   ```
+   supabase secrets set VAPID_PUBLIC_KEY="<public>" \
+     VAPID_PRIVATE_KEY="<private>" \
+     VAPID_SUBJECT="mailto:you@example.com"
+   ```
+   (`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are provided automatically.)
+5. **Deploy the function**:
+   ```
+   supabase functions deploy send-reminders
+   ```
+6. **Schedule it** to run every few minutes — in Supabase **Database → Cron** (or
+   pg_cron), call the function URL on a `*/5 * * * *` schedule.
+
+Then in the app, tap **🔔 Reminders** to grant permission and subscribe this
+device. Reminders are sent for tasks you own, in your saved timezone. (Reminders
+for shared collaborators are a future enhancement.)
 
 ### Enable "Sign in with Google" (optional)
 
@@ -150,6 +183,7 @@ assets/auth.js          Sign in / sign up UI
 assets/history.js       Streak & stats helpers
 assets/app.js           UI controller (rendering + interactions)
 supabase/schema.sql     Database tables, RLS policies, share RPC
+supabase/functions/send-reminders/  Edge Function that sends push reminders
 manifest.json, sw.js    PWA manifest + offline service worker
 icon.svg, icon-*.png    App icons (scalable + PNG/maskable for installs)
 apple-touch-icon.png    iOS home-screen icon
