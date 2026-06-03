@@ -63,7 +63,7 @@
     Store.onAuthChange = () => { notified.clear(); render(); Auth.render(); checkNewDay(); };
     Store.onRecovery = () => Auth.openRecovery();
     Store.onSync = (state) => Auth.setSync(state);
-    window.addEventListener("online", () => Auth.setSync("synced"));
+    window.addEventListener("online", () => { Auth.setSync("synced"); if (Store.cloud) Store.flushOutbox(); });
     window.addEventListener("offline", () => Auth.setSync("offline"));
 
     bindEvents();
