@@ -403,7 +403,7 @@
         if (templates.length) {
           let p = nextPosition(this.templates);
           await sb.from("templates").insert(templates.map((t) => ({
-            list_id: this.currentListId, text: t.text || "(untitled)", due: t.due || "", position: p++,
+            list_id: this.currentListId, text: t.text || "(untitled)", due: t.due || "", days: daysToStr(t.days), position: p++,
           })));
         }
         await this.reload();
