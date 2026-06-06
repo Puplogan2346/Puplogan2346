@@ -45,7 +45,42 @@ function bootstrap({ cloud }) {
   load("store.js");
   load("history.js");
   load("import.js");
+  load("quickadd.js");
   return { WC: win.WC, fake };
+}
+
+function testQuickAdd() {
+  console.log("\nQuick-add parser:");
+  const { WC } = bootstrap({ cloud: false });
+  const Q = WC.Quick;
+  let r = Q.parse("Email Bob 3pm");
+  assert(r.text === "Email Bob" && r.due === "15:00" && !r.flagged, "12h '3pm' -> 15:00");
+  r = Q.parse("Standup 9:30 !");
+  assert(r.text === "Standup" && r.due === "09:30" && r.flagged, "24h time + '!' flag");
+  r = Q.parse("Call vendor at 9");
+  assert(r.text === "Call vendor" && r.due === "09:00", "'at 9' -> 09:00");
+  r = Q.parse("Lunch 12pm");
+  assert(r.due === "12:00", "noon '12pm' -> 12:00");
+  r = Q.parse("Pay rent !!");
+  assert(r.text === "Pay rent" && r.due === "" && r.flagged, "flag with no time");
+  r = Q.parse("Review 1-on-1 notes");
+  assert(r.text === "Review 1-on-1 notes" && r.due === "", "leaves non-time text alone");
+}
+
+async function testRecurringTemplates() {
+  console.log("\nRecurring templates:");
+  const { WC } = bootstrap({ cloud: false });
+  const S = WC.Store; S.onChange = () => {};
+  await S.init();
+  await S.addTemplate("Daily review", "17:00");          // every day
+  await S.addTemplate("Monday plan", "", [1]);            // Mondays only
+  assert(S.templates.length === 2, "adds templates with day rules");
+  assert(S.templatesForDay(1).length === 2, "Monday includes both");
+  assert(S.templatesForDay(3).length === 1 && S.templatesForDay(3)[0].text === "Daily review", "Wednesday excludes Monday-only");
+  const mon = S.templates.find((t) => t.text === "Monday plan");
+  await S.updateTemplate(mon.id, { days: [2, 4] });
+  assert(S.templatesForDay(1).length === 1, "editing days reschedules off Monday");
+  assert(S.templatesForDay(2).length === 2, "now included on Tuesday");
 }
 
 function testImport() {
@@ -173,6 +208,8 @@ async function testCloud() {
   await testLocal();
   await testCloud();
   testImport();
+  testQuickAdd();
+  await testRecurringTemplates();
   console.log("");
   if (failures) { console.error(failures + " assertion(s) failed."); process.exit(1); }
   console.log("All tests passed.");

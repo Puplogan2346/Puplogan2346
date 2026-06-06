@@ -137,13 +137,17 @@
     wasAllDone = allDone;
 
     // List
-    const visible = tasks.filter((t) => (filter === "active" ? !t.done : filter === "done" ? t.done : true));
+    const visible = tasks.filter((t) =>
+      filter === "active" ? !t.done :
+      filter === "done" ? t.done :
+      filter === "flagged" ? t.flagged : true);
     el.list.innerHTML = "";
     if (visible.length === 0) {
       const empty = document.createElement("div");
       empty.className = "empty";
       if (total === 0) empty.innerHTML = '<span class="big">📝</span>No tasks yet — add one above, or apply your <strong>⭐ template</strong>.';
       else if (filter === "active") empty.innerHTML = '<span class="big">✅</span>Nothing active. Everything is checked off!';
+      else if (filter === "flagged") empty.innerHTML = '<span class="big">⚑</span>No flagged tasks. Flag important ones with the ⚐ button.';
       else empty.innerHTML = '<span class="big">🗂️</span>Nothing here for this filter yet.';
       el.list.appendChild(empty);
     } else {
@@ -156,7 +160,7 @@
   function taskNode(t) {
     const editable = Store.canEdit;
     const li = document.createElement("li");
-    li.className = "task" + (t.done ? " done" : "") + (isOverdue(t) ? " overdue" : "");
+    li.className = "task" + (t.done ? " done" : "") + (isOverdue(t) ? " overdue" : "") + (t.flagged ? " flagged" : "");
     li.dataset.id = t.id;
     li.draggable = editable;
 
@@ -208,11 +212,13 @@
 
     const actions = document.createElement("div");
     actions.className = "actions";
+    const flagBtn = mkBtn(t.flagged ? "⚑" : "⚐", t.flagged ? "Remove flag" : "Flag as important", () => Store.updateTask(t.id, { flagged: !t.flagged }));
+    flagBtn.classList.add("flag"); if (t.flagged) flagBtn.classList.add("active");
     const dueBtn = mkBtn("⏰", "Set due time"); if (t.due) dueBtn.classList.add("active");
     const noteBtn = mkBtn("🗒", "Add a note"); if (t.note) noteBtn.classList.add("active");
     const del = mkBtn("×", "Delete task", () => deleteTask(t)); del.classList.add("del");
-    dueBtn.disabled = noteBtn.disabled = del.disabled = !editable;
-    actions.append(dueBtn, noteBtn, del);
+    flagBtn.disabled = dueBtn.disabled = noteBtn.disabled = del.disabled = !editable;
+    actions.append(flagBtn, dueBtn, noteBtn, del);
 
     main.append(handle, reorder, check, body, actions);
 
@@ -251,6 +257,29 @@
     b.className = "icon-btn"; b.textContent = text; b.title = label; b.setAttribute("aria-label", label);
     if (onClick) b.addEventListener("click", onClick);
     return b;
+  }
+
+  const DAY_NAMES = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+  function makeDayPicker(selected, onChange) {
+    const wrap = document.createElement("div"); wrap.className = "day-picker"; wrap.setAttribute("role", "group"); wrap.setAttribute("aria-label", "Repeat on days");
+    const sel = new Set((selected || []).map(Number));
+    DAY_NAMES.forEach((nm, i) => {
+      const b = document.createElement("button"); b.type = "button"; b.className = "day-toggle" + (sel.has(i) ? " on" : "");
+      b.textContent = nm; b.setAttribute("aria-pressed", String(sel.has(i))); b.setAttribute("aria-label", "Repeat on " + nm);
+      b.addEventListener("click", () => {
+        if (sel.has(i)) sel.delete(i); else sel.add(i);
+        b.classList.toggle("on"); b.setAttribute("aria-pressed", String(sel.has(i)));
+        if (onChange) onChange(wrap.get());
+      });
+      wrap.appendChild(b);
+    });
+    wrap.get = () => [...sel].sort((a, b) => a - b);
+    wrap.reset = () => { sel.clear(); [...wrap.children].forEach((c) => { c.classList.remove("on"); c.setAttribute("aria-pressed", "false"); }); };
+    return wrap;
+  }
+  function daysLabel(days) {
+    if (!days || !days.length) return "Every day";
+    return days.map((d) => DAY_NAMES[d]).join(" ");
   }
 
   // =====================================================================
@@ -335,8 +364,9 @@
   // =====================================================================
   function checkNewDay() {
     const { changed } = Store.isNewDay();
-    if (changed && Store.templates.length > 0) {
-      el.bannerText.textContent = `New day! Apply your daily template (${Store.templates.length} task${Store.templates.length > 1 ? "s" : ""})?`;
+    const todays = Store.templatesForDay(new Date().getDay());
+    if (changed && todays.length > 0) {
+      el.bannerText.textContent = `New day! Apply your daily template (${todays.length} task${todays.length > 1 ? "s" : ""})?`;
       el.templateBanner.classList.add("show");
     }
     Store.markDaySeen();
@@ -377,9 +407,13 @@
   function openTemplates() {
     const overlay = buildOverlay("Daily template", (modal) => {
       const sub = document.createElement("p"); sub.className = "sub";
-      sub.textContent = "Recurring tasks for every work day. Apply with one click, or you'll be prompted each new day.";
+      sub.textContent = "Recurring tasks. Apply with one click, or you'll be prompted each new day. Pick days to repeat only on those (none = every day).";
       const form = document.createElement("form"); form.className = "tmpl-add";
       form.innerHTML = '<input type="text" placeholder="Recurring task…" autocomplete="off" /><input type="time" aria-label="Default due time" /><button class="btn-primary" type="submit">Add</button>';
+      const pickerRow = document.createElement("div"); pickerRow.className = "tmpl-days-row";
+      const pickerLabel = document.createElement("span"); pickerLabel.className = "acct-muted"; pickerLabel.textContent = "Repeat:";
+      const picker = makeDayPicker([]);
+      pickerRow.append(pickerLabel, picker);
       const list = document.createElement("ul"); list.className = "tmpl-list";
       const actions = document.createElement("div"); actions.className = "modal-actions";
       const saveBtn = document.createElement("button"); saveBtn.className = "btn-ghost"; saveBtn.textContent = "Save today's list as template";
@@ -391,16 +425,22 @@
         if (!Store.templates.length) { const e = document.createElement("li"); e.className = "tmpl-empty"; e.textContent = "No recurring tasks yet."; list.appendChild(e); return; }
         for (const item of Store.templates) {
           const li = document.createElement("li"); li.className = "tmpl-item";
-          li.innerHTML = `<span class="t-text">${esc(item.text)}</span><span class="t-time">${item.due ? "⏰ " + fmtDue(item.due) : ""}</span>`;
+          const head = document.createElement("div"); head.className = "tmpl-item-head";
+          head.innerHTML = `<span class="t-text">${esc(item.text)}</span><span class="t-time">${item.due ? "⏰ " + fmtDue(item.due) : ""}</span>`;
           const del = mkBtn("×", "Remove", async () => { await Store.removeTemplate(item.id); renderList(); }); del.classList.add("del");
-          li.appendChild(del); list.appendChild(li);
+          head.appendChild(del);
+          const itemPicker = makeDayPicker(item.days, (days) => Store.updateTemplate(item.id, { days }));
+          const lbl = document.createElement("span"); lbl.className = "tmpl-days-label acct-muted"; lbl.textContent = daysLabel(item.days);
+          itemPicker.addEventListener("click", () => { lbl.textContent = daysLabel(itemPicker.get()); });
+          const daysRow = document.createElement("div"); daysRow.className = "tmpl-days-row"; daysRow.append(itemPicker, lbl);
+          li.append(head, daysRow); list.appendChild(li);
         }
       }
-      form.addEventListener("submit", async (e) => { e.preventDefault(); const txt = form.children[0].value.trim(); if (!txt) return; await Store.addTemplate(txt, form.children[1].value); form.children[0].value = ""; form.children[1].value = ""; renderList(); form.children[0].focus(); });
+      form.addEventListener("submit", async (e) => { e.preventDefault(); const txt = form.children[0].value.trim(); if (!txt) return; await Store.addTemplate(txt, form.children[1].value, picker.get()); form.children[0].value = ""; form.children[1].value = ""; picker.reset(); renderList(); form.children[0].focus(); });
       saveBtn.addEventListener("click", async () => { if (!Store.tasks.length) { alert("No tasks to save yet."); return; } if (Store.templates.length && !confirm("Replace your current template with today's list?")) return; await Store.setTemplatesFromTasks(); renderList(); });
       applyBtn.addEventListener("click", async () => { await Store.applyTemplate(); closeOverlay(overlay); });
 
-      modal.append(sub, form, list, actions);
+      modal.append(sub, form, pickerRow, list, actions);
       renderList();
     });
   }
@@ -558,7 +598,13 @@
   // Events
   // =====================================================================
   function bindEvents() {
-    el.addForm.addEventListener("submit", (e) => { e.preventDefault(); Store.addTask(el.taskInput.value, el.timeInput.value); el.taskInput.value = ""; el.timeInput.value = ""; el.taskInput.focus(); });
+    el.addForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const parsed = WC.Quick.parse(el.taskInput.value);
+      if (!parsed.text) { el.taskInput.value = ""; return; }
+      Store.addTask(parsed.text, parsed.due || el.timeInput.value, parsed.flagged);
+      el.taskInput.value = ""; el.timeInput.value = ""; el.taskInput.focus();
+    });
 
     el.filters.addEventListener("click", (e) => {
       const btn = e.target.closest(".filter"); if (!btn) return;
@@ -581,7 +627,8 @@
       const done = Store.tasks.filter((t) => t.done); const prev = snapshot();
       const carried = Store.tasks.length - done.length;
       if (done.length) Store.removeTasks(done.map((t) => t.id)); else render();
-      if (Store.templates.length) { el.bannerText.textContent = `New day! Apply your daily template (${Store.templates.length} task${Store.templates.length > 1 ? "s" : ""})?`; el.templateBanner.classList.add("show"); }
+      const todays = Store.templatesForDay(new Date().getDay());
+      if (todays.length) { el.bannerText.textContent = `New day! Apply your daily template (${todays.length} task${todays.length > 1 ? "s" : ""})?`; el.templateBanner.classList.add("show"); }
       const msg = done.length ? `New day — ${carried} carried over, ${done.length} cleared` : `New day — ${carried} task${carried === 1 ? "" : "s"} carried over`;
       toast(msg, () => undoRemoval(prev, done));
     });

@@ -293,38 +293,38 @@
         sb.from("history").select("day,completed,total").eq("list_id", this.currentListId).order("day", { ascending: true }),
       ]);
       this.tasks = (t.data || []).map(normalizeTask);
-      this.templates = (tpl.data || []).map((r) => ({ id: r.id, text: r.text, due: r.due || "" }));
+      this.templates = (tpl.data || []).map(normalizeTemplate);
       this.history = (h.data || []).map((r) => ({ day: r.day, completed: r.completed, total: r.total }));
     },
 
     // ===================================================================
     // Task mutations
     // ===================================================================
-    async addTask(text, due) {
+    async addTask(text, due, flagged) {
       const trimmed = (text || "").trim();
       if (!trimmed) return;
       if (this.cloud) {
         const position = nextPosition(this.tasks);
         await this._sync((async () => {
-          await sb.from("tasks").insert({ list_id: this.currentListId, text: trimmed, due: due || "", position });
+          await sb.from("tasks").insert({ list_id: this.currentListId, text: trimmed, due: due || "", flagged: !!flagged, position });
           await this.reload();
         })());
       } else {
-        this.tasks.push({ id: uid(), text: trimmed, done: false, createdAt: Date.now(), due: due || "", note: "" });
+        this.tasks.push({ id: uid(), text: trimmed, done: false, createdAt: Date.now(), due: due || "", note: "", flagged: !!flagged });
         this.persistLocal();
       }
       this.onChange();
     },
 
     async addTasksBulk(items) {
-      // items: [{ text, due }]
+      // items: [{ text, due, flagged }]
       if (this.cloud) {
         let position = nextPosition(this.tasks);
-        const rows = items.map((it) => ({ list_id: this.currentListId, text: it.text.trim(), due: it.due || "", position: position++ }));
+        const rows = items.map((it) => ({ list_id: this.currentListId, text: it.text.trim(), due: it.due || "", flagged: !!it.flagged, position: position++ }));
         if (rows.length) await sb.from("tasks").insert(rows);
         await this.reload();
       } else {
-        for (const it of items) this.tasks.push({ id: uid(), text: it.text.trim(), done: false, createdAt: Date.now(), due: it.due || "", note: "" });
+        for (const it of items) this.tasks.push({ id: uid(), text: it.text.trim(), done: false, createdAt: Date.now(), due: it.due || "", note: "", flagged: !!it.flagged });
         this.persistLocal();
       }
       this.onChange();
@@ -339,6 +339,7 @@
         if ("text" in patch) row.text = patch.text;
         if ("due" in patch) row.due = patch.due;
         if ("note" in patch) row.note = patch.note;
+        if ("flagged" in patch) row.flagged = !!patch.flagged;
         if ("done" in patch) { row.done = patch.done; row.done_at = patch.done ? new Date().toISOString() : null; }
         await this._sync(sb.from("tasks").update(row).eq("id", id));
       } else {
@@ -375,7 +376,7 @@
         let position = nextPosition(this.tasks);
         const rows = taskObjs.map((t) => ({
           list_id: this.currentListId, text: t.text, done: !!t.done,
-          due: t.due || "", note: t.note || "", position: position++,
+          due: t.due || "", note: t.note || "", flagged: !!t.flagged, position: position++,
           done_at: t.done ? new Date(t.doneAt || Date.now()).toISOString() : null,
         }));
         if (rows.length) await sb.from("tasks").insert(rows);
@@ -395,14 +396,14 @@
           let p = nextPosition(this.tasks);
           await sb.from("tasks").insert(tasks.map((t) => ({
             list_id: this.currentListId, text: t.text || "(untitled)", done: !!t.done,
-            due: t.due || "", note: t.note || "", position: p++,
+            due: t.due || "", note: t.note || "", flagged: !!t.flagged, position: p++,
             done_at: t.done ? new Date(t.doneAt || Date.now()).toISOString() : null,
           })));
         }
         if (templates.length) {
           let p = nextPosition(this.templates);
           await sb.from("templates").insert(templates.map((t) => ({
-            list_id: this.currentListId, text: t.text || "(untitled)", due: t.due || "", position: p++,
+            list_id: this.currentListId, text: t.text || "(untitled)", due: t.due || "", days: daysToStr(t.days), position: p++,
           })));
         }
         await this.reload();
@@ -428,13 +429,31 @@
     // ===================================================================
     // Templates
     // ===================================================================
-    async addTemplate(text, due) {
+    async addTemplate(text, due, days) {
       const trimmed = (text || "").trim(); if (!trimmed) return;
+      const daysStr = daysToStr(days);
       if (this.cloud) {
-        await sb.from("templates").insert({ list_id: this.currentListId, text: trimmed, due: due || "", position: nextPosition(this.templates) });
+        await sb.from("templates").insert({ list_id: this.currentListId, text: trimmed, due: due || "", days: daysStr, position: nextPosition(this.templates) });
         await this.reload();
       } else {
-        this.templates.push({ id: uid(), text: trimmed, due: due || "" });
+        this.templates.push({ id: uid(), text: trimmed, due: due || "", days: strToDays(daysStr) });
+        this.persistLocal();
+      }
+      this.onChange();
+    },
+
+    async updateTemplate(id, patch) {
+      const t = this.templates.find((x) => x.id === id); if (!t) return;
+      if ("days" in patch) t.days = Array.isArray(patch.days) ? patch.days : strToDays(patch.days);
+      if ("text" in patch) t.text = patch.text;
+      if ("due" in patch) t.due = patch.due;
+      if (this.cloud) {
+        const row = {};
+        if ("days" in patch) row.days = daysToStr(t.days);
+        if ("text" in patch) row.text = t.text;
+        if ("due" in patch) row.due = t.due;
+        await sb.from("templates").update(row).eq("id", id);
+      } else {
         this.persistLocal();
       }
       this.onChange();
@@ -448,20 +467,26 @@
     },
 
     async setTemplatesFromTasks() {
-      const items = this.tasks.map((t, i) => ({ text: t.text, due: t.due || "", position: i }));
+      const items = this.tasks.map((t, i) => ({ text: t.text, due: t.due || "", days: "", position: i }));
       if (this.cloud) {
         await sb.from("templates").delete().eq("list_id", this.currentListId);
         if (items.length) await sb.from("templates").insert(items.map((it) => ({ list_id: this.currentListId, ...it })));
         await this.reload();
       } else {
-        this.templates = items.map((it) => ({ id: uid(), text: it.text, due: it.due }));
+        this.templates = items.map((it) => ({ id: uid(), text: it.text, due: it.due, days: [] }));
         this.persistLocal();
       }
       this.onChange();
     },
 
+    // Templates scheduled for a given weekday (0=Sun..6=Sat). Empty days = every day.
+    templatesForDay(weekday) {
+      return this.templates.filter((t) => !t.days || !t.days.length || t.days.indexOf(weekday) !== -1);
+    },
+
     async applyTemplate() {
-      await this.addTasksBulk(this.templates.map((t) => ({ text: t.text, due: t.due || "" })));
+      const due = this.templatesForDay(new Date().getDay());
+      await this.addTasksBulk(due.map((t) => ({ text: t.text, due: t.due || "" })));
     },
 
     // ===================================================================
@@ -539,10 +564,22 @@
 
   function normalizeTask(r) {
     return {
-      id: r.id, text: r.text, done: !!r.done, due: r.due || "", note: r.note || "",
+      id: r.id, text: r.text, done: !!r.done, due: r.due || "", note: r.note || "", flagged: !!r.flagged,
       createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
       doneAt: r.done_at ? new Date(r.done_at).getTime() : null,
     };
+  }
+  function normalizeTemplate(r) {
+    return { id: r.id, text: r.text, due: r.due || "", days: strToDays(r.days) };
+  }
+  function strToDays(s) {
+    if (Array.isArray(s)) return s.slice();
+    return String(s || "").split(",").map((n) => parseInt(n, 10)).filter((n) => n >= 0 && n <= 6);
+  }
+  function daysToStr(days) {
+    if (!days) return "";
+    const arr = Array.isArray(days) ? days : strToDays(days);
+    return arr.filter((n) => n >= 0 && n <= 6).join(",");
   }
   function nextPosition(arr) {
     return arr.length ? arr.length : 0;
