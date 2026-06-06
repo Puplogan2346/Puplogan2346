@@ -81,11 +81,9 @@
 
     el.taskInput.focus();
 
-    // Reminders
-    if ("Notification" in window && Notification.permission === "granted") {
-      el.enableReminders.classList.add("active");
-      el.enableReminders.textContent = "🔔 Reminders on";
-    }
+    // Reminders (in-tab now; push state resolves once the SW is ready)
+    updateRemindersBtn();
+    Store.refreshPushState().then(updateRemindersBtn);
     checkReminders();
     setInterval(checkReminders, 30000);
   }
@@ -341,13 +339,37 @@
   // =====================================================================
   // Reminders
   // =====================================================================
-  function requestReminders() {
+  async function requestReminders() {
+    const cfg = window.WC_CONFIG || {};
+    const canPush = Store.cloud && cfg.vapidPublicKey && Store.pushSupported;
+    if (canPush) {
+      try {
+        if (Store.pushEnabled) { await Store.disablePush(); toast("Push reminders off", null); }
+        else { await Store.enablePush(); toast("Push reminders on — you'll be reminded even when the app is closed.", null); }
+      } catch (e) { alert(pushErr(e)); }
+      updateRemindersBtn();
+      return;
+    }
+    // Fallback: in-tab notifications (work only while the app is open).
     if (!("Notification" in window)) { alert("This browser doesn't support notifications."); return; }
     Notification.requestPermission().then((p) => {
-      el.enableReminders.classList.toggle("active", p === "granted");
-      el.enableReminders.textContent = p === "granted" ? "🔔 Reminders on" : "🔔 Reminders";
+      updateRemindersBtn();
       if (p === "denied") alert("Reminders are blocked. Enable notifications for this page in your browser settings.");
     });
+  }
+  function updateRemindersBtn() {
+    const granted = ("Notification" in window) && Notification.permission === "granted";
+    if (Store.pushEnabled) { el.enableReminders.classList.add("active"); el.enableReminders.textContent = "🔔 Push on"; }
+    else if (granted) { el.enableReminders.classList.add("active"); el.enableReminders.textContent = "🔔 Reminders on"; }
+    else { el.enableReminders.classList.remove("active"); el.enableReminders.textContent = "🔔 Reminders"; }
+  }
+  function pushErr(e) {
+    const m = (e && e.message) || "";
+    if (/blocked/i.test(m)) return "Notifications are blocked. Enable them for this site in your browser settings.";
+    if (/not configured/i.test(m)) return "Push reminders aren't set up yet (no VAPID key in config).";
+    if (/doesn't support/i.test(m)) return m;
+    if (/sign in/i.test(m)) return m;
+    return "Couldn't enable push reminders: " + (m || "unknown error");
   }
   function checkReminders() {
     if (!("Notification" in window) || Notification.permission !== "granted") return;

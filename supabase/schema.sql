@@ -9,6 +9,7 @@ create table if not exists public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   email text unique,
   display_name text,
+  timezone text,                  -- IANA tz (e.g. "America/New_York"), for push reminders
   created_at timestamptz not null default now()
 );
 
@@ -63,7 +64,8 @@ create table if not exists public.tasks (
   flagged boolean not null default false,
   position double precision not null default 0,
   created_at timestamptz not null default now(),
-  done_at timestamptz
+  done_at timestamptz,
+  notified_at timestamptz         -- set by the reminder function once a push is sent
 );
 create index if not exists tasks_list_id_idx on public.tasks (list_id);
 
@@ -82,7 +84,22 @@ create index if not exists templates_list_id_idx on public.templates (list_id);
 
 -- Upgrades for existing databases (safe to re-run).
 alter table public.tasks add column if not exists flagged boolean not null default false;
+alter table public.tasks add column if not exists notified_at timestamptz;
 alter table public.templates add column if not exists days text not null default '';
+alter table public.profiles add column if not exists timezone text;
+
+-- ---------------------------------------------------------------------------
+-- Push subscriptions: one row per device/browser that opted into reminders.
+-- ---------------------------------------------------------------------------
+create table if not exists public.push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade,
+  endpoint text not null unique,
+  p256dh text not null,
+  auth text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists push_subscriptions_user_idx on public.push_subscriptions (user_id);
 
 -- ---------------------------------------------------------------------------
 -- History: one row per list per day, for streaks & stats.
@@ -217,6 +234,14 @@ create policy history_write on public.history
   for all to authenticated
   using (private.can_edit_list(list_id))
   with check (private.can_edit_list(list_id));
+
+-- Push subscriptions: you can only see/manage your own.
+alter table public.push_subscriptions enable row level security;
+drop policy if exists push_own on public.push_subscriptions;
+create policy push_own on public.push_subscriptions
+  for all to authenticated
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());
 
 -- ---------------------------------------------------------------------------
 -- RPC: share a list with someone by email (returns the new share row).
