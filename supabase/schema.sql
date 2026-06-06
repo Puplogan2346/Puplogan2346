@@ -220,11 +220,15 @@ create policy history_write on public.history
 
 -- ---------------------------------------------------------------------------
 -- RPC: share a list with someone by email (returns the new share row).
+-- SECURITY INVOKER: the caller must be the list owner anyway, and RLS already
+-- lets an owner read profiles (to resolve the email) and write list_shares, so
+-- no elevated privileges are needed. Keeping it INVOKER avoids the linter's
+-- SECURITY DEFINER warning (lint 0029).
 -- ---------------------------------------------------------------------------
 create or replace function public.share_list_by_email(target_list uuid, target_email text, target_role text default 'editor')
 returns public.list_shares
 language plpgsql
-security definer set search_path = public
+security invoker set search_path = public
 as $$
 declare
   target_user uuid;
@@ -248,7 +252,7 @@ begin
 end;
 $$;
 
--- Lock down SECURITY DEFINER functions that remain in the exposed schema.
+-- Lock down EXECUTE on the functions in the exposed schema.
 -- Trigger function: fires on auth.users insert; never called over the API.
 revoke all on function public.handle_new_user() from public, anon, authenticated;
 -- Share RPC: signed-in users only, never anonymous.
