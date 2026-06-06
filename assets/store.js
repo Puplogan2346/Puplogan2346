@@ -402,7 +402,7 @@
       if (this.cloud) {
         const row = {};
         if ("text" in patch) row.text = patch.text;
-        if ("due" in patch) row.due = patch.due;
+        if ("due" in patch) { row.due = patch.due; row.notified_at = null; } // re-arm the reminder for the new time
         if ("note" in patch) row.note = patch.note;
         if ("flagged" in patch) row.flagged = !!patch.flagged;
         if ("done" in patch) { row.done = patch.done; row.done_at = patch.done ? new Date().toISOString() : null; }
