@@ -96,6 +96,17 @@ async function testOffline() {
   const dbT = fake._db.tasks.find((t) => t.text === "Offline task");
   assert(dbT && dbT.done && dbT.done_at, "queued edit is applied in the DB (replayed in order)");
   assert(dbT.list_id === listId, "replayed rows keep their list scope");
+
+  // A realtime change skipped while the outbox was pending is caught up on flush.
+  nav.onLine = false;
+  await S.addTask("Another offline edit", "");
+  S._missedRemote = true; // a collaborator's realtime event arrived and was skipped
+  fake._db.tasks.push({ id: "remote-1", list_id: listId, text: "From teammate", done: false, due: "", note: "", flagged: false, position: 50, created_at: new Date().toISOString(), done_at: null });
+  assert(!S.tasks.find((t) => t.text === "From teammate"), "skipped remote change is not visible while offline");
+  nav.onLine = true;
+  await S.flushOutbox();
+  assert(S.tasks.find((t) => t.text === "From teammate"), "catches up on skipped remote changes once the outbox drains");
+  assert(S.tasks.find((t) => t.text === "Another offline edit"), "own queued change survives the catch-up reload");
 }
 
 async function testRecurringTemplates() {

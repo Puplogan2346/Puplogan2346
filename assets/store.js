@@ -50,6 +50,7 @@
     googleScopes: "https://www.googleapis.com/auth/calendar.events.readonly https://www.googleapis.com/auth/tasks",
     outbox: [],                   // queued task writes awaiting sync (offline-first)
     _flushing: false,
+    _missedRemote: false,         // a realtime event was skipped while the outbox was pending
 
     get cloud() { return this.mode === "cloud"; },
     get canEdit() {
@@ -559,11 +560,11 @@
       this._channel = sb
         .channel("list-" + this.currentListId)
         .on("postgres_changes", { event: "*", schema: "public", table: "tasks", filter: "list_id=eq." + this.currentListId }, async () => {
-          if (this.outbox.length) return; // don't overwrite local changes that haven't synced yet
+          if (this.outbox.length) { this._missedRemote = true; return; } // don't overwrite unsynced local changes; catch up after the flush
           await this.reload(); this.remoteUpdate = true; this.onChange(); this.remoteUpdate = false; this.onSync("remote");
         })
         .on("postgres_changes", { event: "*", schema: "public", table: "templates", filter: "list_id=eq." + this.currentListId }, async () => {
-          if (this.outbox.length) return;
+          if (this.outbox.length) { this._missedRemote = true; return; }
           await this.reload(); this.remoteUpdate = true; this.onChange(); this.remoteUpdate = false; this.onSync("remote");
         })
         .subscribe();
@@ -612,6 +613,12 @@
       } finally {
         this._flushing = false;
         this.onSync(this.outbox.length ? "offline" : "synced");
+      }
+      // Caught up on our own writes — now pull any remote changes we skipped
+      // (realtime events ignored while the outbox had unsynced items).
+      if (!this.outbox.length && this._missedRemote) {
+        this._missedRemote = false;
+        try { await this.reload(); this.remoteUpdate = true; this.onChange(); this.remoteUpdate = false; this.onSync("remote"); } catch (e) {}
       }
     },
 
