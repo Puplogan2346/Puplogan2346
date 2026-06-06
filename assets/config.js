@@ -26,5 +26,5 @@ window.WC_CONFIG = {
   // Paste your VAPID *public* key here (see README → "Push reminders" for how to
   // generate keys and deploy the reminder function). Leave blank to keep
   // reminders in-tab only.
-  vapidPublicKey: "",
+  vapidPublicKey: "BJ8LvooPsrtEL6QA5_ral6ChVbYxTR20LRXOdlnccReHwZSftVXa8ha9bKW3qDjCmmIbNpeiX01JpdjjaWdeXPA",
 };
