@@ -115,8 +115,14 @@ create table if not exists public.history (
 
 -- ---------------------------------------------------------------------------
 -- Helper: can the current user access a given list (owner or shared)?
+-- These are SECURITY DEFINER (they read lists/list_shares past RLS) and are used
+-- INSIDE the policies below, so they live in a `private` schema that PostgREST
+-- does NOT expose — they must not be callable as REST RPCs (linter 0028/0029).
+-- Signed-in users still get EXECUTE so RLS can evaluate them.
 -- ---------------------------------------------------------------------------
-create or replace function public.can_access_list(target uuid)
+create schema if not exists private;
+
+create or replace function private.can_access_list(target uuid)
 returns boolean
 language sql
 security definer set search_path = public
@@ -129,7 +135,7 @@ as $$
   );
 $$;
 
-create or replace function public.can_edit_list(target uuid)
+create or replace function private.can_edit_list(target uuid)
 returns boolean
 language sql
 security definer set search_path = public
@@ -142,6 +148,15 @@ as $$
     where s.list_id = target and s.shared_with = auth.uid() and s.role = 'editor'
   );
 $$;
+
+revoke all on function private.can_access_list(uuid) from public;
+revoke all on function private.can_edit_list(uuid) from public;
+grant execute on function private.can_access_list(uuid) to authenticated;
+grant execute on function private.can_edit_list(uuid) to authenticated;
+
+-- Drop any older public copies (pre-hardening) now that policies use private.*.
+drop function if exists public.can_access_list(uuid);
+drop function if exists public.can_edit_list(uuid);
 
 -- ---------------------------------------------------------------------------
 -- Row Level Security.
@@ -165,7 +180,7 @@ create policy profiles_update on public.profiles
 -- Lists: owner full control; shared users can read.
 drop policy if exists lists_select on public.lists;
 create policy lists_select on public.lists
-  for select to authenticated using (public.can_access_list(id));
+  for select to authenticated using (private.can_access_list(id));
 drop policy if exists lists_insert on public.lists;
 create policy lists_insert on public.lists
   for insert to authenticated with check (owner = auth.uid());
@@ -195,30 +210,30 @@ create policy shares_write on public.list_shares
 -- Tasks / templates / history: gated by list access.
 drop policy if exists tasks_select on public.tasks;
 create policy tasks_select on public.tasks
-  for select to authenticated using (public.can_access_list(list_id));
+  for select to authenticated using (private.can_access_list(list_id));
 drop policy if exists tasks_write on public.tasks;
 create policy tasks_write on public.tasks
   for all to authenticated
-  using (public.can_edit_list(list_id))
-  with check (public.can_edit_list(list_id));
+  using (private.can_edit_list(list_id))
+  with check (private.can_edit_list(list_id));
 
 drop policy if exists templates_select on public.templates;
 create policy templates_select on public.templates
-  for select to authenticated using (public.can_access_list(list_id));
+  for select to authenticated using (private.can_access_list(list_id));
 drop policy if exists templates_write on public.templates;
 create policy templates_write on public.templates
   for all to authenticated
-  using (public.can_edit_list(list_id))
-  with check (public.can_edit_list(list_id));
+  using (private.can_edit_list(list_id))
+  with check (private.can_edit_list(list_id));
 
 drop policy if exists history_select on public.history;
 create policy history_select on public.history
-  for select to authenticated using (public.can_access_list(list_id));
+  for select to authenticated using (private.can_access_list(list_id));
 drop policy if exists history_write on public.history;
 create policy history_write on public.history
   for all to authenticated
-  using (public.can_edit_list(list_id))
-  with check (public.can_edit_list(list_id));
+  using (private.can_edit_list(list_id))
+  with check (private.can_edit_list(list_id));
 
 -- Push subscriptions: you can only see/manage your own.
 alter table public.push_subscriptions enable row level security;
@@ -230,11 +245,15 @@ create policy push_own on public.push_subscriptions
 
 -- ---------------------------------------------------------------------------
 -- RPC: share a list with someone by email (returns the new share row).
+-- SECURITY INVOKER: the caller must be the list owner anyway, and RLS already
+-- lets an owner read profiles (to resolve the email) and write list_shares, so
+-- no elevated privileges are needed. Keeping it INVOKER avoids the linter's
+-- SECURITY DEFINER warning (lint 0029).
 -- ---------------------------------------------------------------------------
 create or replace function public.share_list_by_email(target_list uuid, target_email text, target_role text default 'editor')
 returns public.list_shares
 language plpgsql
-security definer set search_path = public
+security invoker set search_path = public
 as $$
 declare
   target_user uuid;
@@ -257,6 +276,13 @@ begin
   return result;
 end;
 $$;
+
+-- Lock down EXECUTE on the functions in the exposed schema.
+-- Trigger function: fires on auth.users insert; never called over the API.
+revoke all on function public.handle_new_user() from public, anon, authenticated;
+-- Share RPC: signed-in users only, never anonymous.
+revoke all on function public.share_list_by_email(uuid, text, text) from public, anon;
+grant execute on function public.share_list_by_email(uuid, text, text) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Realtime: make sure these tables broadcast changes.
