@@ -25,6 +25,7 @@ function bootstrap({ cloud }) {
   };
   const fake = cloud ? makeFake() : null;
   if (cloud) win.supabase = { createClient: () => fake };
+  const nav = { onLine: true };
   const sandbox = {
     window: win,
     localStorage: {
@@ -34,19 +35,20 @@ function bootstrap({ cloud }) {
     },
     Date,
     console,
+    navigator: nav,
   };
   const load = (f) => {
     const code = fs.readFileSync(path.join(ASSETS, f), "utf8");
     // Expose the stubbed globals to the asset's IIFE.
-    new Function("window", "localStorage", "Date", "console", code)
-      .call(sandbox, win, sandbox.localStorage, Date, console);
+    new Function("window", "localStorage", "Date", "console", "navigator", code)
+      .call(sandbox, win, sandbox.localStorage, Date, console, nav);
   };
   load("supabase.js");
   load("store.js");
   load("history.js");
   load("import.js");
   load("quickadd.js");
-  return { WC: win.WC, fake };
+  return { WC: win.WC, fake, nav };
 }
 
 function testQuickAdd() {
@@ -65,6 +67,46 @@ function testQuickAdd() {
   assert(r.text === "Pay rent" && r.due === "" && r.flagged, "flag with no time");
   r = Q.parse("Review 1-on-1 notes");
   assert(r.text === "Review 1-on-1 notes" && r.due === "", "leaves non-time text alone");
+}
+
+async function testOffline() {
+  console.log("\nOffline-first outbox (mock Supabase):");
+  const { WC, fake, nav } = bootstrap({ cloud: true });
+  const S = WC.Store; S.onChange = () => {};
+  await S.init();
+  const listId = S.currentListId;
+
+  // Go offline: changes apply optimistically but don't reach the DB.
+  nav.onLine = false;
+  await S.addTask("Offline task", "08:00");
+  await S.addTask("Second task", "");
+  assert(S.tasks.length === 2, "tasks appear immediately while offline (optimistic)");
+  assert(fake._db.tasks.length === 0, "nothing written to the DB while offline");
+  assert(S.outbox.length === 2, "writes are queued in the outbox");
+
+  await S.updateTask(S.tasks[0].id, { done: true });
+  assert(S.tasks[0].done && S.tasks[0].doneAt, "edits also apply optimistically offline");
+  assert(S.outbox.length === 3, "edit queued too");
+
+  // Back online: the queue flushes to the DB.
+  nav.onLine = true;
+  await S.flushOutbox();
+  assert(S.outbox.length === 0, "outbox drains once back online");
+  assert(fake._db.tasks.length === 2, "queued inserts reach the DB");
+  const dbT = fake._db.tasks.find((t) => t.text === "Offline task");
+  assert(dbT && dbT.done && dbT.done_at, "queued edit is applied in the DB (replayed in order)");
+  assert(dbT.list_id === listId, "replayed rows keep their list scope");
+
+  // A realtime change skipped while the outbox was pending is caught up on flush.
+  nav.onLine = false;
+  await S.addTask("Another offline edit", "");
+  S._missedRemote = true; // a collaborator's realtime event arrived and was skipped
+  fake._db.tasks.push({ id: "remote-1", list_id: listId, text: "From teammate", done: false, due: "", note: "", flagged: false, position: 50, created_at: new Date().toISOString(), done_at: null });
+  assert(!S.tasks.find((t) => t.text === "From teammate"), "skipped remote change is not visible while offline");
+  nav.onLine = true;
+  await S.flushOutbox();
+  assert(S.tasks.find((t) => t.text === "From teammate"), "catches up on skipped remote changes once the outbox drains");
+  assert(S.tasks.find((t) => t.text === "Another offline edit"), "own queued change survives the catch-up reload");
 }
 
 async function testRecurringTemplates() {
@@ -210,6 +252,7 @@ async function testCloud() {
   testImport();
   testQuickAdd();
   await testRecurringTemplates();
+  await testOffline();
   console.log("");
   if (failures) { console.error(failures + " assertion(s) failed."); process.exit(1); }
   console.log("All tests passed.");

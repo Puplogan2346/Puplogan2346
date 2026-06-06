@@ -19,6 +19,14 @@
   };
 
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+  function uuid4() {
+    // RFC-4122-ish v4 id (Math.random is fine here — ids only need to be unique).
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0, v = c === "x" ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+  }
+  function isOffline() { return typeof navigator !== "undefined" && navigator && navigator.onLine === false; }
   function todayKey() { return new Date().toLocaleDateString("en-CA"); } // YYYY-MM-DD
   function loadJSON(key, fallback) {
     try { const r = localStorage.getItem(key); if (r) return JSON.parse(r); } catch (e) {}
@@ -40,6 +48,9 @@
     remoteUpdate: false,          // set when the last onChange came from realtime
     providerToken: null,          // Google OAuth access token (set right after sign-in)
     googleScopes: "https://www.googleapis.com/auth/calendar.events.readonly https://www.googleapis.com/auth/tasks",
+    outbox: [],                   // queued task writes awaiting sync (offline-first)
+    _flushing: false,
+    _missedRemote: false,         // a realtime event was skipped while the outbox was pending
 
     get cloud() { return this.mode === "cloud"; },
     get canEdit() {
@@ -104,9 +115,11 @@
         name: meta.display_name || meta.full_name || meta.name || user.email,
         avatar: meta.avatar_url || meta.picture || "",
       };
+      this._loadOutbox();
       await this.loadLists();
       await this.reload();
       this.subscribeRealtime();
+      this.flushOutbox();
     },
 
     // ===================================================================
@@ -304,30 +317,32 @@
       const trimmed = (text || "").trim();
       if (!trimmed) return;
       if (this.cloud) {
-        const position = nextPosition(this.tasks);
-        await this._sync((async () => {
-          await sb.from("tasks").insert({ list_id: this.currentListId, text: trimmed, due: due || "", flagged: !!flagged, position });
-          await this.reload();
-        })());
+        const row = { id: uuid4(), list_id: this.currentListId, text: trimmed, due: due || "", flagged: !!flagged, position: nextPosition(this.tasks) };
+        this.tasks.push(normalizeTask(row));
+        this._enqueue({ op: "insert", row });
       } else {
         this.tasks.push({ id: uid(), text: trimmed, done: false, createdAt: Date.now(), due: due || "", note: "", flagged: !!flagged });
         this.persistLocal();
       }
       this.onChange();
+      await this.flushOutbox();
     },
 
     async addTasksBulk(items) {
       // items: [{ text, due, flagged }]
       if (this.cloud) {
         let position = nextPosition(this.tasks);
-        const rows = items.map((it) => ({ list_id: this.currentListId, text: it.text.trim(), due: it.due || "", flagged: !!it.flagged, position: position++ }));
-        if (rows.length) await sb.from("tasks").insert(rows);
-        await this.reload();
+        for (const it of items) {
+          const row = { id: uuid4(), list_id: this.currentListId, text: it.text.trim(), due: it.due || "", flagged: !!it.flagged, position: position++ };
+          this.tasks.push(normalizeTask(row));
+          this._enqueue({ op: "insert", row });
+        }
       } else {
         for (const it of items) this.tasks.push({ id: uid(), text: it.text.trim(), done: false, createdAt: Date.now(), due: it.due || "", note: "", flagged: !!it.flagged });
         this.persistLocal();
       }
       this.onChange();
+      await this.flushOutbox();
     },
 
     async updateTask(id, patch) {
@@ -341,26 +356,29 @@
         if ("note" in patch) row.note = patch.note;
         if ("flagged" in patch) row.flagged = !!patch.flagged;
         if ("done" in patch) { row.done = patch.done; row.done_at = patch.done ? new Date().toISOString() : null; }
-        await this._sync(sb.from("tasks").update(row).eq("id", id));
+        this._enqueue({ op: "update", id, patch: row });
       } else {
         this.persistLocal();
       }
       this.onChange();
+      await this.flushOutbox();
     },
 
     async removeTask(id) {
       this.tasks = this.tasks.filter((x) => x.id !== id);
-      if (this.cloud) await this._sync(sb.from("tasks").delete().eq("id", id));
+      if (this.cloud) this._enqueue({ op: "delete", ids: [id] });
       else this.persistLocal();
       this.onChange();
+      await this.flushOutbox();
     },
 
     async removeTasks(ids) {
       const set = new Set(ids);
       this.tasks = this.tasks.filter((x) => !set.has(x.id));
-      if (this.cloud) await this._sync(sb.from("tasks").delete().in("id", ids));
+      if (this.cloud) this._enqueue({ op: "delete", ids: ids.slice() });
       else this.persistLocal();
       this.onChange();
+      await this.flushOutbox();
     },
 
     async replaceTasks(tasks) {
@@ -371,21 +389,24 @@
     },
 
     async restoreTasks(taskObjs) {
-      // Cloud-mode undo of deletes: re-insert the removed task rows.
+      // Cloud-mode undo of deletes: re-insert the removed task rows (same ids).
       if (this.cloud) {
         let position = nextPosition(this.tasks);
-        const rows = taskObjs.map((t) => ({
-          list_id: this.currentListId, text: t.text, done: !!t.done,
-          due: t.due || "", note: t.note || "", flagged: !!t.flagged, position: position++,
-          done_at: t.done ? new Date(t.doneAt || Date.now()).toISOString() : null,
-        }));
-        if (rows.length) await sb.from("tasks").insert(rows);
-        await this.reload();
+        for (const t of taskObjs) {
+          const row = {
+            id: t.id || uuid4(), list_id: this.currentListId, text: t.text, done: !!t.done,
+            due: t.due || "", note: t.note || "", flagged: !!t.flagged, position: position++,
+            done_at: t.done ? new Date(t.doneAt || Date.now()).toISOString() : null,
+          };
+          this.tasks.push(normalizeTask(row));
+          this._enqueue({ op: "insert", row });
+        }
       } else {
         this.tasks = this.tasks.concat(taskObjs);
         this.persistLocal();
       }
       this.onChange();
+      await this.flushOutbox();
     },
 
     async importData(data) {
@@ -419,11 +440,13 @@
       const byId = new Map(this.tasks.map((t) => [t.id, t]));
       this.tasks = orderedIds.map((id) => byId.get(id)).filter(Boolean);
       if (this.cloud) {
-        await this._sync(Promise.all(this.tasks.map((t, i) => sb.from("tasks").update({ position: i }).eq("id", t.id))));
+        this.tasks.forEach((t, i) => { t.position = i; });
+        this._enqueue({ op: "reorder", positions: this.tasks.map((t, i) => ({ id: t.id, position: i })) });
       } else {
         this.persistLocal();
       }
       this.onChange();
+      await this.flushOutbox();
     },
 
     // ===================================================================
@@ -502,10 +525,13 @@
       else this.history.push({ day, completed, total });
       this.history.sort((a, b) => (a.day < b.day ? -1 : 1));
       if (this.cloud) {
-        await sb.from("history").upsert(
-          { list_id: this.currentListId, day, completed, total, updated_at: new Date().toISOString() },
-          { onConflict: "list_id,day" }
-        );
+        if (isOffline()) return; // best-effort; stats re-record on the next change
+        try {
+          await sb.from("history").upsert(
+            { list_id: this.currentListId, day, completed, total, updated_at: new Date().toISOString() },
+            { onConflict: "list_id,day" }
+          );
+        } catch (e) { /* non-critical */ }
       } else {
         localStorage.setItem(LK.history, JSON.stringify(this.history));
       }
@@ -534,9 +560,11 @@
       this._channel = sb
         .channel("list-" + this.currentListId)
         .on("postgres_changes", { event: "*", schema: "public", table: "tasks", filter: "list_id=eq." + this.currentListId }, async () => {
+          if (this.outbox.length) { this._missedRemote = true; return; } // don't overwrite unsynced local changes; catch up after the flush
           await this.reload(); this.remoteUpdate = true; this.onChange(); this.remoteUpdate = false; this.onSync("remote");
         })
         .on("postgres_changes", { event: "*", schema: "public", table: "templates", filter: "list_id=eq." + this.currentListId }, async () => {
+          if (this.outbox.length) { this._missedRemote = true; return; }
           await this.reload(); this.remoteUpdate = true; this.onChange(); this.remoteUpdate = false; this.onSync("remote");
         })
         .subscribe();
@@ -545,14 +573,53 @@
       if (this._channel && sb) { sb.removeChannel(this._channel); this._channel = null; }
     },
 
-    // ---- sync indicator: track in-flight cloud writes ----
-    _pending: 0,
-    async _sync(p) {
-      if (!this.cloud) return p;
-      this._pending++;
-      this.onSync("syncing");
-      try { return await p; }
-      finally { if (--this._pending === 0) this.onSync("synced"); }
+    // ---- offline-first outbox: queue task writes, replay when online ----
+    _outboxKey() { return "wc_outbox_" + (this.user ? this.user.id : "anon"); },
+    _loadOutbox() { this.outbox = loadJSON(this._outboxKey(), []) || []; },
+    _persistOutbox() { try { localStorage.setItem(this._outboxKey(), JSON.stringify(this.outbox)); } catch (e) {} },
+    _enqueue(op) { this.outbox.push(op); this._persistOutbox(); },
+    async _dispatch(op) {
+      let res;
+      if (op.op === "insert") res = await sb.from("tasks").insert(op.row);
+      else if (op.op === "update") res = await sb.from("tasks").update(op.patch).eq("id", op.id);
+      else if (op.op === "delete") res = await sb.from("tasks").delete().in("id", op.ids);
+      else if (op.op === "reorder") {
+        for (const p of op.positions) {
+          const r = await sb.from("tasks").update({ position: p.position }).eq("id", p.id);
+          if (r && r.error) throw r.error;
+        }
+        return;
+      }
+      if (res && res.error) throw res.error;
+    },
+    async flushOutbox() {
+      if (this._flushing || !this.cloud) return;
+      if (isOffline()) { this.onSync("offline"); return; }
+      this._flushing = true;
+      if (this.outbox.length) this.onSync("syncing");
+      try {
+        while (this.outbox.length) {
+          if (isOffline()) break;
+          const op = this.outbox[0];
+          try {
+            await this._dispatch(op);
+          } catch (e) {
+            if (isOffline()) break;  // lost connection mid-flush — keep and retry later
+            console.warn("[Workday Checklist] dropping un-syncable change:", e && e.message);
+          }
+          this.outbox.shift();
+          this._persistOutbox();
+        }
+      } finally {
+        this._flushing = false;
+        this.onSync(this.outbox.length ? "offline" : "synced");
+      }
+      // Caught up on our own writes — now pull any remote changes we skipped
+      // (realtime events ignored while the outbox had unsynced items).
+      if (!this.outbox.length && this._missedRemote) {
+        this._missedRemote = false;
+        try { await this.reload(); this.remoteUpdate = true; this.onChange(); this.remoteUpdate = false; this.onSync("remote"); } catch (e) {}
+      }
     },
 
     // ---- local persistence ----

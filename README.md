@@ -27,6 +27,8 @@ A plug-and-play checklist to track your work day. It runs as a **static site**
 - **Password reset by email** and a live **sync status** indicator (cloud mode)
 - Light/dark theme, keyboard shortcut (`/` to focus), accessibility-minded (focus-trapped dialogs, `Esc` to close)
 - Installable **PWA** with proper home-screen icons and offline support
+- **Offline-first** (cloud mode) — changes apply instantly and queue locally,
+  then sync automatically when you're back online
 - **Export / import** JSON backups
 - **Universal import** — paste a list, or drop in a calendar (`.ics`) or
   spreadsheet (`.csv`); each line/event/row becomes a task
