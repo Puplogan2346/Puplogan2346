@@ -129,7 +129,7 @@
     el.streak.innerHTML =
       `🔥 <strong>${s.streak}</strong>-day streak` +
       ` · <strong>${s.perfectDays}</strong> perfect day${s.perfectDays === 1 ? "" : "s"}` +
-      ` · <strong>${s.totalCompleted}</strong> tasks done all-time`;
+      ` · <strong>${s.totalCompleted}</strong> task${s.totalCompleted === 1 ? "" : "s"} done all-time`;
 
     if (allDone && !wasAllDone && !reducedMotion) confetti();
     wasAllDone = allDone;
@@ -319,7 +319,7 @@
   }
   function refreshStreak() {
     const s = History.stats(Store.history || []);
-    el.streak.innerHTML = `🔥 <strong>${s.streak}</strong>-day streak · <strong>${s.perfectDays}</strong> perfect day${s.perfectDays === 1 ? "" : "s"} · <strong>${s.totalCompleted}</strong> tasks done all-time`;
+    el.streak.innerHTML = `🔥 <strong>${s.streak}</strong>-day streak · <strong>${s.perfectDays}</strong> perfect day${s.perfectDays === 1 ? "" : "s"} · <strong>${s.totalCompleted}</strong> task${s.totalCompleted === 1 ? "" : "s"} done all-time`;
   }
 
   // =====================================================================
