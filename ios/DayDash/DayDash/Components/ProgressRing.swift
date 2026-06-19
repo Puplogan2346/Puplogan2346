@@ -1,27 +1,42 @@
 import SwiftUI
 
-/// A circular progress ring with a label in the middle — the dashboard's "how's today going" glance.
+/// A circular progress ring with a glowing gradient track and an animated count.
+/// The dashboard's "how's today going" glance.
 struct ProgressRing: View {
     var progress: Double          // 0...1
-    var lineWidth: CGFloat = 12
+    var lineWidth: CGFloat = 13
     var label: String
     var caption: String
+
+    private var clamped: Double { max(0.0001, min(progress, 1)) }
 
     var body: some View {
         ZStack {
             Circle()
-                .stroke(.quaternary, lineWidth: lineWidth)
+                .stroke(Color.primary.opacity(0.08), lineWidth: lineWidth)
+
             Circle()
-                .trim(from: 0, to: max(0.001, min(progress, 1)))
+                .trim(from: 0, to: clamped)
                 .stroke(
-                    AngularGradient(colors: [.accentColor, .accentColor.opacity(0.6)], center: .center),
+                    AngularGradient(
+                        gradient: Gradient(colors: [Theme.amber, Theme.peach, Theme.terracotta, Theme.amber]),
+                        center: .center
+                    ),
                     style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
-                .animation(.spring(duration: 0.5), value: progress)
-            VStack(spacing: 2) {
-                Text(label).font(.title2.bold()).monospacedDigit()
-                Text(caption).font(.caption).foregroundStyle(.secondary)
+                .shadow(color: Theme.peach.opacity(0.5), radius: 6)
+                .animation(.spring(response: 0.6, dampingFraction: 0.8), value: clamped)
+
+            VStack(spacing: 1) {
+                Text(label)
+                    .font(Theme.rounded(.title3, weight: .bold))
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+                Text(caption)
+                    .font(Theme.rounded(.caption2, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
             }
         }
     }

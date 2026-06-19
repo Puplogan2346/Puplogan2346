@@ -8,49 +8,63 @@ struct BrainDumpView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                HStack(alignment: .bottom, spacing: 8) {
-                    TextField("Dump a thought…", text: $draft, axis: .vertical)
-                        .lineLimit(1...4)
-                        .focused($focused)
-                        .padding(10)
-                        .background(Color(.secondarySystemBackground),
-                                    in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .onSubmit(save)
-                    Button(action: save) {
-                        Image(systemName: "arrow.up.circle.fill").font(.title)
+            ZStack {
+                Color(.systemGroupedBackground).ignoresSafeArea()
+                VStack(spacing: 0) {
+                    List {
+                        ForEach(store.notes) { note in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(note.text).font(Theme.rounded(.body))
+                                Text(note.createdAt, format: .relative(presentation: .named))
+                                    .font(Theme.rounded(.caption2))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.vertical, 2)
+                        }
+                        .onDelete { store.deleteNotes(at: $0) }
                     }
-                    .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-                .padding()
-
-                List {
-                    ForEach(store.notes) { note in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(note.text)
-                            Text(note.createdAt, format: .relative(presentation: .named))
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                    .scrollContentBackground(.hidden)
+                    .listStyle(.insetGrouped)
+                    .overlay {
+                        if store.notes.isEmpty {
+                            ContentUnavailableView("Clear your head",
+                                                   systemImage: "brain.head.profile",
+                                                   description: Text("Type anything below — ideas, worries, reminders. Sort it out later."))
                         }
                     }
-                    .onDelete { store.deleteNotes(at: $0) }
-                }
-                .listStyle(.plain)
-                .overlay {
-                    if store.notes.isEmpty {
-                        ContentUnavailableView("Clear your head",
-                                               systemImage: "brain.head.profile",
-                                               description: Text("Type anything above — ideas, worries, reminders. Sort it out later."))
-                    }
+
+                    composer
                 }
             }
             .navigationTitle("Brain Dump")
         }
     }
 
+    private var composer: some View {
+        HStack(alignment: .bottom, spacing: 10) {
+            TextField("Dump a thought…", text: $draft, axis: .vertical)
+                .font(Theme.rounded(.body))
+                .lineLimit(1...4)
+                .focused($focused)
+                .padding(12)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(.quaternary, lineWidth: 0.5))
+            Button(action: save) {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.largeTitle)
+                    .foregroundStyle(.white, Theme.terracotta)
+            }
+            .buttonStyle(.pressable)
+            .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+        .padding(12)
+        .background(.thinMaterial)
+    }
+
     private func save() {
-        store.addNote(draft)
+        guard !draft.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) { store.addNote(draft) }
         draft = ""
-        Haptics.tap()
+        Haptics.success()
     }
 }

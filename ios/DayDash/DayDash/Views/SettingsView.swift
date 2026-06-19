@@ -13,8 +13,29 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    HStack(spacing: 14) {
+                        Image(systemName: "sun.max.fill")
+                            .font(.title)
+                            .foregroundStyle(.white)
+                            .frame(width: 52, height: 52)
+                            .background(
+                                LinearGradient(colors: [Theme.peach, Theme.terracotta],
+                                               startPoint: .topLeading, endPoint: .bottomTrailing),
+                                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            )
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("DayDash").font(Theme.rounded(.headline))
+                            Text("Your day, in one calm place.")
+                                .font(Theme.rounded(.caption)).foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+
                 Section("You") {
                     TextField("First name", text: $name)
+                        .font(Theme.rounded(.body))
                         .textInputAutocapitalization(.words)
                 }
 
@@ -27,13 +48,15 @@ struct SettingsView: View {
                         Label("Calendar access denied", systemImage: "xmark.circle")
                             .foregroundStyle(.secondary)
                         Text("Enable it in iOS Settings › DayDash › Calendars.")
-                            .font(.footnote).foregroundStyle(.secondary)
+                            .font(Theme.rounded(.footnote)).foregroundStyle(.secondary)
                     case .unknown:
                         Button {
+                            Haptics.tap()
                             Task { await calendar.requestAccessAndLoad() }
                         } label: {
                             Label("Connect Calendar", systemImage: "calendar.badge.plus")
                         }
+                        .tint(Theme.terracotta)
                     }
                 } header: {
                     Text("Connections")
@@ -43,11 +66,14 @@ struct SettingsView: View {
 
                 Section {
                     SecureField(claude.hasAPIKey ? "•••• stored securely" : "sk-ant-…", text: $apiKey)
+                        .font(Theme.rounded(.body))
                     Button("Save key") {
                         claude.setAPIKey(apiKey)
                         apiKey = ""
                         keySaved = true
+                        Haptics.success()
                     }
+                    .tint(Theme.terracotta)
                     .disabled(apiKey.trimmingCharacters(in: .whitespaces).isEmpty)
                     if claude.hasAPIKey {
                         Button("Remove key", role: .destructive) {
@@ -62,11 +88,11 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Link("Anthropic Console", destination: URL(string: "https://console.anthropic.com")!)
-                } header: {
-                    Text("About")
+                    Link(destination: URL(string: "https://console.anthropic.com")!) {
+                        Label("Anthropic Console", systemImage: "safari")
+                    }
                 } footer: {
-                    Text("DayDash — your day, in one calm place.")
+                    Text("DayDash v1.0")
                 }
             }
             .navigationTitle("Settings")
@@ -80,7 +106,7 @@ struct SettingsView: View {
             .alert("Key saved", isPresented: $keySaved) {
                 Button("OK", role: .cancel) { }
             } message: {
-                Text("AI features are ready to go.")
+                Text("AI features are ready to go. ✨")
             }
         }
     }

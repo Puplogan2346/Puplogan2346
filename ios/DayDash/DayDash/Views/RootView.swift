@@ -18,5 +18,6 @@ struct RootView: View {
             AssistantView()
                 .tabItem { Label("Assistant", systemImage: "sparkles") }
         }
+        .tint(Theme.terracotta)
     }
 }

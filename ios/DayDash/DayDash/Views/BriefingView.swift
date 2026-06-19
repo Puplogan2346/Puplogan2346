@@ -13,30 +13,43 @@ struct BriefingView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    if isLoading {
-                        HStack { ProgressView(); Text("Pulling your day together…") }
+            ZStack {
+                TimeOfDayBackground()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        if isLoading {
+                            HStack(spacing: 12) {
+                                ProgressView()
+                                Text("Pulling your day together…")
+                                    .font(Theme.rounded(.subheadline))
+                            }
                             .foregroundStyle(.secondary)
-                    } else if let errorText {
-                        ContentUnavailableView {
-                            Label("Couldn't generate a briefing", systemImage: "exclamationmark.bubble")
-                        } description: {
-                            Text(errorText)
-                        } actions: {
-                            Button("Try again") { Task { await generate() } }
-                                .buttonStyle(.borderedProminent)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.top, 40)
+                        } else if let errorText {
+                            ContentUnavailableView {
+                                Label("Couldn't generate a briefing", systemImage: "exclamationmark.bubble")
+                            } description: {
+                                Text(errorText)
+                            } actions: {
+                                Button("Try again") { Task { await generate() } }
+                                    .buttonStyle(.borderedProminent)
+                                    .tint(Theme.terracotta)
+                            }
+                        } else {
+                            Card {
+                                Text(briefing.isEmpty ? localFallback : briefing)
+                                    .font(Theme.rounded(.body))
+                                    .lineSpacing(3)
+                            }
                         }
-                    } else if briefing.isEmpty {
-                        Text(localFallback).foregroundStyle(.secondary)
-                    } else {
-                        Text(briefing)
                     }
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding()
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .scrollIndicators(.hidden)
             }
-            .navigationTitle("Daily Briefing ✨")
+            .navigationTitle("Daily Briefing")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
@@ -56,7 +69,7 @@ struct BriefingView: View {
         if let f = store.focusedTask { lines.append("• Focus: \(f.title)") }
         lines.append("• \(calendar.todayEvents.count) calendar event(s).")
         lines.append("• \(store.habitsDoneToday)/\(store.habits.count) habits done.")
-        lines.append("\nAdd a Claude API key in Settings for an AI-written briefing.")
+        lines.append("\nAdd a Claude API key in Settings for an AI-written briefing. ✨")
         return lines.joined(separator: "\n")
     }
 
@@ -86,6 +99,7 @@ struct BriefingView: View {
                 system: "You are DayDash, a calm, supportive daily companion. Keep it brief.",
                 messages: [ChatMessage(role: .user, text: prompt)]
             )
+            Haptics.soft()
         } catch {
             errorText = error.localizedDescription
         }

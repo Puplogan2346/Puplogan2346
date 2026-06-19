@@ -74,10 +74,22 @@ ios/DayDash/
     Assets.xcassets/            App icon + accent color
 ```
 
+## Design
+
+DayDash is tuned to feel like a first-party Apple app:
+
+- **SF Rounded** typography throughout, warm "sunrise" palette.
+- A **living time-of-day background** that shifts (morning → night) and gently breathes
+  (respects Reduce Motion).
+- **Material/glass cards** with soft depth, a gradient + glowing **progress ring**, and
+  animated numeric counts.
+- **Spring motion** and **SF Symbol effects** (bounce on completion), plus layered
+  **haptics** so finishing things feels good.
+- A custom app icon (`Assets.xcassets/AppIcon.appiconset`).
+
 ## Roadmap ideas
 
 - More account connections (Apple Reminders, Health, Gmail/Calendar via OAuth).
 - Home Screen & Lock Screen **widgets** showing your focus task and progress.
 - Local **notifications** / a gentle daily check-in.
 - Streaming AI responses and richer "plan my day" tools.
-- A custom app icon (the current one is a placeholder).
