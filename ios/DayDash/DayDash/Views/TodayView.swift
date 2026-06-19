@@ -8,6 +8,8 @@ struct TodayView: View {
     @State private var showingBriefing = false
     @State private var quickAdd = ""
     @State private var appeared = false
+    // Chosen once when the view is created so it doesn't re-randomize on every re-render.
+    @State private var encouragement = Theme.encouragement
     @FocusState private var quickAddFocused: Bool
 
     private let daypart = Theme.Daypart.current()
@@ -78,7 +80,7 @@ struct TodayView: View {
                  ? daypart.greeting + "."
                  : "\(daypart.greeting), \(store.userName).")
                 .font(Theme.rounded(.largeTitle, weight: .bold))
-            Text(Theme.encouragement)
+            Text(encouragement)
                 .font(Theme.rounded(.subheadline))
                 .foregroundStyle(.secondary)
         }
