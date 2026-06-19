@@ -38,6 +38,10 @@ struct AssistantView: View {
                         .onChange(of: messages.count) { _, _ in
                             withAnimation(.smooth) { proxy.scrollTo(messages.last?.id, anchor: .bottom) }
                         }
+                        .onChange(of: messages.last?.text) { _, _ in
+                            // Keep the newest tokens in view as the reply streams in.
+                            proxy.scrollTo(messages.last?.id, anchor: .bottom)
+                        }
                         .onChange(of: isSending) { _, sending in
                             if sending { withAnimation(.smooth) { proxy.scrollTo("typing", anchor: .bottom) } }
                         }
@@ -149,13 +153,35 @@ struct AssistantView: View {
         isSending = true
         Haptics.tap()
 
+        // Snapshot the conversation to send (before the streaming placeholder is added).
+        let outgoing = messages
+        let assistantID = ChatMessage(role: .assistant, text: "")
+
         Task {
+            var insertedID: UUID?
             do {
-                let reply = try await claude.send(system: systemPrompt(), messages: messages)
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                    messages.append(ChatMessage(role: .assistant, text: reply))
+                for try await delta in claude.streamText(system: systemPrompt(), messages: outgoing) {
+                    if insertedID == nil {
+                        // First token: drop the typing indicator and start the bubble.
+                        isSending = false
+                        var bubble = assistantID
+                        bubble.text = delta
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                            messages.append(bubble)
+                        }
+                        insertedID = bubble.id
+                        Haptics.soft()
+                    } else if let id = insertedID,
+                              let idx = messages.firstIndex(where: { $0.id == id }) {
+                        messages[idx].text += delta
+                    }
                 }
-                Haptics.soft()
+                if insertedID == nil {
+                    // Stream completed with no text.
+                    messages.append(ChatMessage(role: .assistant, text: "(No response)"))
+                }
+            } catch is CancellationError {
+                // User navigated away — nothing to surface.
             } catch {
                 errorText = error.localizedDescription
             }

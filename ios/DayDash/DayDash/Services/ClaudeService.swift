@@ -39,26 +39,94 @@ final class ClaudeService {
         }
     }
 
-    /// Send a conversation and get back assistant text.
-    func send(system: String, messages: [ChatMessage]) async throws -> String {
+    // MARK: - Request building
+
+    private func makeRequest(system: String, messages: [ChatMessage], stream: Bool) throws -> URLRequest {
         guard let key = Keychain.get(Self.apiKeyKeychainKey), !key.isEmpty else {
             throw ClaudeError.missingKey
         }
-
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue(key, forHTTPHeaderField: "x-api-key")
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         request.setValue("application/json", forHTTPHeaderField: "content-type")
+        request.timeoutInterval = 60
 
         let body: [String: Any] = [
             "model": model,
             "max_tokens": 1024,
+            "stream": stream,
             "system": system,
             "messages": messages.map { ["role": $0.role.rawValue, "content": $0.text] }
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        return request
+    }
 
+    // MARK: - Streaming (preferred — replies appear token-by-token)
+
+    /// Streams the assistant's reply as a sequence of text chunks via Server-Sent Events.
+    /// Yields incremental `text_delta`s; throws on HTTP error, refusal, or cancellation.
+    func streamText(system: String, messages: [ChatMessage]) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    let request = try makeRequest(system: system, messages: messages, stream: true)
+                    let (bytes, response) = try await URLSession.shared.bytes(for: request)
+                    guard let http = response as? HTTPURLResponse else { throw ClaudeError.malformed }
+
+                    guard (200..<300).contains(http.statusCode) else {
+                        // Error responses aren't streamed — drain the body for the message.
+                        var data = Data()
+                        for try await byte in bytes { data.append(byte) }
+                        let message = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])
+                            .flatMap { ($0?["error"] as? [String: Any])?["message"] as? String }
+                            ?? String(data: data, encoding: .utf8) ?? "Unknown error"
+                        throw ClaudeError.http(http.statusCode, message)
+                    }
+
+                    for try await line in bytes.lines {
+                        try Task.checkCancellation()
+                        guard line.hasPrefix("data:") else { continue }
+                        let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+                        guard !payload.isEmpty, payload != "[DONE]",
+                              let data = payload.data(using: .utf8),
+                              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                              let type = json["type"] as? String else { continue }
+
+                        switch type {
+                        case "content_block_delta":
+                            if let delta = json["delta"] as? [String: Any],
+                               (delta["type"] as? String) == "text_delta",
+                               let text = delta["text"] as? String {
+                                continuation.yield(text)
+                            }
+                        case "message_delta":
+                            // Always check stop_reason — a safety refusal arrives here.
+                            if let delta = json["delta"] as? [String: Any],
+                               (delta["stop_reason"] as? String) == "refusal" {
+                                throw ClaudeError.refusal
+                            }
+                        case "error":
+                            let msg = (json["error"] as? [String: Any])?["message"] as? String ?? "Stream error"
+                            throw ClaudeError.http(http.statusCode, msg)
+                        default:
+                            break
+                        }
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    // MARK: - Non-streaming (single shot; used as a simple fallback)
+
+    func send(system: String, messages: [ChatMessage]) async throws -> String {
+        let request = try makeRequest(system: system, messages: messages, stream: false)
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw ClaudeError.malformed }
 
@@ -72,8 +140,6 @@ final class ClaudeService {
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw ClaudeError.malformed
         }
-
-        // Always check stop_reason before reading content — a safety refusal returns 200.
         if (json["stop_reason"] as? String) == "refusal" { throw ClaudeError.refusal }
 
         guard let content = json["content"] as? [[String: Any]] else { throw ClaudeError.malformed }
@@ -81,7 +147,6 @@ final class ClaudeService {
             .filter { ($0["type"] as? String) == "text" }
             .compactMap { $0["text"] as? String }
             .joined()
-
         return text.isEmpty ? "(No response)" : text
     }
 }

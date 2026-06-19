@@ -94,12 +94,18 @@ struct BriefingView: View {
         \(habits.isEmpty ? "(none)" : habits)
         """
 
+        briefing = ""
         do {
-            briefing = try await claude.send(
+            for try await delta in claude.streamText(
                 system: "You are DayDash, a calm, supportive daily companion. Keep it brief.",
                 messages: [ChatMessage(role: .user, text: prompt)]
-            )
+            ) {
+                if isLoading { isLoading = false }   // first token: swap spinner for text
+                briefing += delta
+            }
             Haptics.soft()
+        } catch is CancellationError {
+            // Dismissed mid-stream.
         } catch {
             errorText = error.localizedDescription
         }

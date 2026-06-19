@@ -10,6 +10,13 @@ struct SettingsView: View {
     @State private var apiKey = ""
     @State private var keySaved = false
 
+    // Daily check-in reminder
+    @AppStorage("remindersEnabled") private var remindersEnabled = false
+    @AppStorage("reminderHour") private var reminderHour = 8
+    @AppStorage("reminderMinute") private var reminderMinute = 0
+    @State private var reminderTime = Date()
+    @State private var notifDenied = false
+
     var body: some View {
         NavigationStack {
             Form {
@@ -65,6 +72,18 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Toggle("Daily check-in", isOn: $remindersEnabled)
+                        .tint(Theme.terracotta)
+                    if remindersEnabled {
+                        DatePicker("Time", selection: $reminderTime, displayedComponents: .hourAndMinute)
+                    }
+                } header: {
+                    Text("Reminders")
+                } footer: {
+                    Text("A gentle daily nudge to check in with your day. Delivered locally on your device.")
+                }
+
+                Section {
                     SecureField(claude.hasAPIKey ? "•••• stored securely" : "sk-ant-…", text: $apiKey)
                         .font(Theme.rounded(.body))
                     Button("Save key") {
@@ -102,11 +121,45 @@ struct SettingsView: View {
                     Button("Done") { save(); dismiss() }
                 }
             }
-            .onAppear { name = store.userName }
+            .onAppear {
+                name = store.userName
+                reminderTime = Calendar.current.date(
+                    bySettingHour: reminderHour, minute: reminderMinute, second: 0, of: Date()
+                ) ?? Date()
+            }
+            .onChange(of: remindersEnabled) { _, enabled in
+                Task {
+                    if enabled {
+                        let granted = await NotificationManager.requestAuthorization()
+                        if granted {
+                            NotificationManager.scheduleDailyReminder(hour: reminderHour, minute: reminderMinute)
+                            Haptics.success()
+                        } else {
+                            remindersEnabled = false
+                            notifDenied = true
+                        }
+                    } else {
+                        NotificationManager.cancelDailyReminder()
+                    }
+                }
+            }
+            .onChange(of: reminderTime) { _, newValue in
+                let comps = Calendar.current.dateComponents([.hour, .minute], from: newValue)
+                reminderHour = comps.hour ?? 8
+                reminderMinute = comps.minute ?? 0
+                if remindersEnabled {
+                    NotificationManager.scheduleDailyReminder(hour: reminderHour, minute: reminderMinute)
+                }
+            }
             .alert("Key saved", isPresented: $keySaved) {
                 Button("OK", role: .cancel) { }
             } message: {
                 Text("AI features are ready to go. ✨")
+            }
+            .alert("Notifications are off", isPresented: $notifDenied) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text("Enable notifications for DayDash in iOS Settings to get your daily check-in.")
             }
         }
     }

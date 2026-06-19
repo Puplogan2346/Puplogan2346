@@ -13,11 +13,13 @@ counterpart to the web Workday Checklist in the repo root.
   juggling everything at once). Satisfying haptics when you finish something.
 - **Habits** — tap to mark done, build 🔥 streaks.
 - **Brain Dump** — a frictionless place to offload thoughts, ideas, and worries.
-- **Assistant** — chat with **Claude** about your day; it knows your tasks, focus,
-  and habits and recommends *one* next action rather than overwhelming you.
-- **Daily Briefing** — one tap (✨) for an AI-written, encouraging plan for the day.
+- **Assistant** — chat with **Claude** about your day (replies **stream in live**,
+  token-by-token); it knows your tasks, focus, and habits and recommends *one* next action.
+- **Daily Briefing** — one tap (✨) for an AI-written, encouraging plan for the day (also streamed).
+- **Daily check-in** — an optional gentle **local notification** at a time you choose.
+- **Home Screen widget** — small/medium widget showing your focus + progress
+  (ready to wire — see [`DayDashWidget-SETUP.md`](DayDashWidget-SETUP.md)).
 - **Connections** — connects to your **Apple Calendar** on-device via EventKit.
-  (Reminders / Health / email are on the roadmap.)
 
 ## Open it on your Mac
 
@@ -90,6 +92,5 @@ DayDash is tuned to feel like a first-party Apple app:
 ## Roadmap ideas
 
 - More account connections (Apple Reminders, Health, Gmail/Calendar via OAuth).
-- Home Screen & Lock Screen **widgets** showing your focus task and progress.
-- Local **notifications** / a gentle daily check-in.
-- Streaming AI responses and richer "plan my day" tools.
+- Lock Screen / StandBy widgets and an interactive "complete focus task" widget button.
+- Richer "plan my day" AI tools and tool-use (e.g. let the assistant add tasks for you).

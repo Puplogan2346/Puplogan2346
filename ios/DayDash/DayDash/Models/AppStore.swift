@@ -27,6 +27,20 @@ final class AppStore {
         tasks = load([TaskItem].self, from: .tasks) ?? AppStore.sampleTasks
         habits = load([Habit].self, from: .habits) ?? AppStore.sampleHabits
         notes = load([Note].self, from: .notes) ?? []
+        syncWidget()
+    }
+
+    /// Publish a fresh snapshot for the Home Screen widget.
+    func syncWidget() {
+        SharedStore.write(WidgetSnapshot(
+            greeting: Theme.greeting(),
+            focusTitle: focusedTask?.title,
+            doneTasks: doneTasksToday,
+            totalTasks: openTasks.count + doneTasksToday,
+            habitsDone: habitsDoneToday,
+            habitsTotal: habits.count,
+            updated: Date()
+        ))
     }
 
     // MARK: - Derived values
@@ -62,6 +76,7 @@ final class AppStore {
         focusedTaskID = id
         if let id { UserDefaults.standard.set(id.uuidString, forKey: "focusedTaskID") }
         else { UserDefaults.standard.removeObject(forKey: "focusedTaskID") }
+        syncWidget()
     }
 
     // MARK: - Task mutations
@@ -71,6 +86,7 @@ final class AppStore {
         guard !trimmed.isEmpty else { return }
         tasks.insert(TaskItem(title: trimmed), at: 0)
         persist(tasks, to: .tasks)
+        syncWidget()
     }
 
     func toggleTask(_ task: TaskItem) {
@@ -78,12 +94,14 @@ final class AppStore {
         tasks[idx].toggle()
         if tasks[idx].isDone && focusedTaskID == task.id { setFocus(nil) }
         persist(tasks, to: .tasks)
+        syncWidget()
     }
 
     func deleteTasks(at offsets: IndexSet, in list: [TaskItem]) {
         let ids = offsets.map { list[$0].id }
         tasks.removeAll { ids.contains($0.id) }
         persist(tasks, to: .tasks)
+        syncWidget()
     }
 
     // MARK: - Habit mutations
@@ -93,17 +111,20 @@ final class AppStore {
         guard !trimmed.isEmpty else { return }
         habits.append(Habit(name: trimmed, emoji: emoji.isEmpty ? "✅" : emoji))
         persist(habits, to: .habits)
+        syncWidget()
     }
 
     func toggleHabit(_ habit: Habit) {
         guard let idx = habits.firstIndex(of: habit) else { return }
         habits[idx].toggle()
         persist(habits, to: .habits)
+        syncWidget()
     }
 
     func deleteHabits(at offsets: IndexSet) {
         habits.remove(atOffsets: offsets)
         persist(habits, to: .habits)
+        syncWidget()
     }
 
     // MARK: - Note mutations
