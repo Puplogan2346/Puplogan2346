@@ -18,6 +18,20 @@ SwiftUI iPhone app: an ADHD-friendly daily dashboard with Claude AI built in.
   and fix any compiler errors. See `START-HERE.md` for run/test steps (Simulator + iPhone).
 - **To run/test:** read `START-HERE.md`. **To wire the widget:** read `DayDashWidget-SETUP.md`.
 
+### Bug-fix pass (static review, pre-Xcode)
+A round of fixes from a careful read-through (still uncompiled — Xcode build is the real test):
+- **`ClaudeService.hasAPIKey` is now a stored `@Observable` property** (was computed off the
+  Keychain, so the UI never re-rendered when a key was saved/removed). The Settings placeholder,
+  "Remove key" button, and the Assistant's "add your key" hint now update live.
+- **One shared `ClaudeService`** is created in `DayDashApp` and injected via `.environment`;
+  `AssistantView`, `BriefingView`, and `SettingsView` read it with `@Environment(ClaudeService.self)`
+  instead of each `@State`-ing its own instance (key state is now consistent across tabs/sheets).
+- **Streaming UI now mutates state on the main actor** — `AssistantView.send()` uses
+  `Task { @MainActor in … }` and `BriefingView.generate()` is `@MainActor`, so `@State` is never
+  written off-main.
+- **Today dashboard refreshes on foreground** — `daypart` is `@State` and, on `scenePhase == .active`,
+  the greeting/background recompute and calendar events reload (fixes staleness across midnight/daypart).
+
 When you finish a chunk of work, update this section so the frontier stays accurate.
 
 ---
