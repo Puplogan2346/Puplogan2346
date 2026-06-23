@@ -32,6 +32,14 @@ A round of fixes from a careful read-through (still uncompiled — Xcode build i
 - **Today dashboard refreshes on foreground** — `daypart` is `@State` and, on `scenePhase == .active`,
   the greeting/background recompute and calendar events reload (fixes staleness across midnight/daypart).
 
+### Unit tests added (need a target in Xcode)
+- First test suite lives in `ios/DayDash/DayDashTests/` (`ModelTests.swift`, `AppStoreTests.swift`):
+  deterministic coverage of `Habit.currentStreak`, `TaskItem.toggle`, `WidgetSnapshot.progress`,
+  `Color(hex:)`, `DayKey`, `Theme.Daypart`, and `AppStore` mutations incl. the filtered-list
+  `deleteTasks(at:in:)` offset→id mapping.
+- Like the widget, the tests aren't wired into a target yet — adding a Unit Testing Bundle by hand
+  in `project.pbxproj` is risky. Follow **`ios/DayDashTests-SETUP.md`** (≈2 min in Xcode), then **⌘U**.
+
 When you finish a chunk of work, update this section so the frontier stays accurate.
 
 ---
