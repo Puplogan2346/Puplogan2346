@@ -5,6 +5,24 @@ SwiftUI iPhone app: an ADHD-friendly daily dashboard with Claude AI built in.
 
 ---
 
+## 📍 Where we are right now (frontier)
+
+- **All code + docs are committed and pushed** to branch `claude/iphone-app-xcode-mac-a6xjjw`
+  (draft PR #17). Nothing is local-only. Working tree is clean.
+- **Built so far:** full app (Today, Tasks, Habits, Brain Dump, Assistant), premium design
+  pass, **streaming** Claude replies, **daily notification**, Apple Calendar integration,
+  **widget code ready to wire**, and the run/test guides (`START-HERE.md`).
+- **NOT done yet:** the app has **not been compiled in Xcode** (built in a Linux env). The
+  widget target is **not** wired into the Xcode project yet.
+- **The next action:** open `ios/DayDash/DayDash.xcodeproj` in **Xcode 16+**, press **⌘B**,
+  and fix any compiler errors. See `START-HERE.md` for run/test steps (Simulator + iPhone).
+- **To run/test:** read `START-HERE.md`. **To wire the widget:** read `DayDashWidget-SETUP.md`.
+
+When you finish a chunk of work, update this section so the frontier stays accurate.
+
+---
+
+
 ## Where everything lives
 
 - **Repo:** `puplogan2346/puplogan2346`
