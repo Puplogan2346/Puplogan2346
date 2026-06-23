@@ -27,7 +27,17 @@ final class AppStore {
         tasks = load([TaskItem].self, from: .tasks) ?? AppStore.sampleTasks
         habits = load([Habit].self, from: .habits) ?? AppStore.sampleHabits
         notes = load([Note].self, from: .notes) ?? []
+        applyPendingWidgetActions()
         syncWidget()
+    }
+
+    /// Apply any actions queued by the interactive widget (e.g. completing the focus task from
+    /// the Home Screen). Call on launch and whenever the app returns to the foreground.
+    func applyPendingWidgetActions() {
+        if SharedStore.consumeFocusCompletion(), let task = focusedTask {
+            // toggleTask marks it done, clears the focus, persists, and re-syncs the widget.
+            toggleTask(task)
+        }
     }
 
     /// Publish a fresh snapshot for the Home Screen widget.

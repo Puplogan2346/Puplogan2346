@@ -40,6 +40,13 @@ A round of fixes from a careful read-through (still uncompiled — Xcode build i
 - Like the widget, the tests aren't wired into a target yet — adding a Unit Testing Bundle by hand
   in `project.pbxproj` is risky. Follow **`ios/DayDashTests-SETUP.md`** (≈2 min in Xcode), then **⌘U**.
 
+### Interactive widget button (AppIntent)
+- The Home Screen widget now has a "Mark done" button for the focus task
+  (`DayDashWidget/CompleteFocusIntent.swift`). It queues a command via `SharedStore` (new
+  pending-action file) which `AppStore.applyPendingWidgetActions()` drains on launch / foreground.
+- Add `CompleteFocusIntent.swift` to the **DayDashWidget** target when wiring the widget, and
+  enable the App Group so the command crosses processes (see `DayDashWidget-SETUP.md`).
+
 When you finish a chunk of work, update this section so the frontier stays accurate.
 
 ---
@@ -172,7 +179,9 @@ app target does **not** compile it. Wire it per `ios/DayDashWidget-SETUP.md`.
 
 ## Ideas not yet built
 
-- Interactive widget button to complete the focus task (AppIntent).
+- ~~Interactive widget button to complete the focus task (AppIntent).~~ **Done** —
+  `DayDashWidget/CompleteFocusIntent.swift` + `SharedStore` pending-action queue +
+  `AppStore.applyPendingWidgetActions()`. Needs the App Group enabled to round-trip.
 - Lock Screen / StandBy widgets.
 - Let the Assistant *add tasks* via tool use.
 - More connections (Reminders, Health, Gmail/Calendar OAuth).

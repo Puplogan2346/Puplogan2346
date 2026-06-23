@@ -74,7 +74,15 @@ struct DayDashWidgetView: View {
                 .minimumScaleFactor(0.8)
             Spacer(minLength: 0)
             HStack(spacing: 6) {
-                Image(systemName: "checklist").imageScale(.small)
+                if entry.snapshot.focusTitle != nil {
+                    // Tap to complete the focus task without opening the app.
+                    Button(intent: CompleteFocusIntent()) {
+                        Image(systemName: "checkmark.circle.fill").imageScale(.medium)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Image(systemName: "checklist").imageScale(.small)
+                }
                 Text("\(entry.snapshot.doneTasks)/\(entry.snapshot.totalTasks) done")
                     .font(.system(.caption, design: .rounded).weight(.medium))
             }
@@ -98,6 +106,18 @@ struct DayDashWidgetView: View {
                     .foregroundStyle(.white)
                     .lineLimit(3)
                     .minimumScaleFactor(0.8)
+                if entry.snapshot.focusTitle != nil {
+                    // Complete the focus task right from the Home Screen.
+                    Button(intent: CompleteFocusIntent()) {
+                        Label("Mark done", systemImage: "checkmark.circle.fill")
+                            .font(.system(.caption, design: .rounded).weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(.white.opacity(0.18), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 4)
+                }
                 Spacer(minLength: 0)
                 HStack(spacing: 6) {
                     Image(systemName: "flame.fill").imageScale(.small)

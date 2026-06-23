@@ -16,9 +16,11 @@ guided step — best done in Xcode because Xcode auto-provisions the App Group +
 1. In the Project navigator, select these files and open the **File Inspector** (right panel):
    - `DayDashWidget/DayDashWidget.swift`
    - `DayDashWidget/DayDashWidgetBundle.swift`
+   - `DayDashWidget/CompleteFocusIntent.swift`  ← interactive "Mark done" button
    - `DayDash/Shared/SharedStore.swift`  ← shared with the app
 2. Under **Target Membership**, make sure:
-   - `DayDashWidget.swift` and `DayDashWidgetBundle.swift` → checked for **DayDashWidget only**
+   - `DayDashWidget.swift`, `DayDashWidgetBundle.swift`, `CompleteFocusIntent.swift`
+     → checked for **DayDashWidget only**
    - `SharedStore.swift` → checked for **BOTH** `DayDash` and `DayDashWidget`
 
    (If the new files aren't already in the project, drag the `DayDashWidget` folder into the
@@ -45,3 +47,13 @@ This is what lets the app and widget share data.
 - The widget reads that snapshot in its `TimelineProvider`.
 - Before the App Group is enabled, `SharedStore` falls back to the app's own container, so the
   **app keeps working** — the widget just shows placeholder data until step 3 is done.
+
+## Interactive "Mark done" button
+- When there's a focus task, the widget shows a tappable checkmark (small) / "Mark done"
+  capsule (medium), backed by `CompleteFocusIntent` (an `AppIntent`).
+- The widget can't reach the app's task list directly, so the intent queues a tiny command via
+  `SharedStore.requestFocusCompletion()` and updates the snapshot optimistically for instant
+  feedback. The app drains the command in `AppStore.applyPendingWidgetActions()` on launch and
+  on returning to the foreground, completing the real task and clearing the focus.
+- This round-trip needs the **App Group enabled on both targets** (step 3) — otherwise the two
+  processes use separate fallback containers and the command can't cross over.

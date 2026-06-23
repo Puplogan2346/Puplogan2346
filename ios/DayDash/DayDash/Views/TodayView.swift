@@ -70,6 +70,8 @@ struct TodayView: View {
             }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active else { return }
+                // Apply anything completed from the Home Screen widget while we were away.
+                store.applyPendingWidgetActions()
                 // Refresh time-of-day theming and reload today's events on re-entry.
                 daypart = Theme.Daypart.current()
                 if calendar.access == .granted {
