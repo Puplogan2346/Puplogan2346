@@ -14,6 +14,7 @@ struct AssistantView: View {
     private let suggestions = [
         "What should I do first?",
         "Break my focus task into 3 small steps",
+        "Add “call the dentist” to my tasks",
         "Plan a calm afternoon"
     ]
 
@@ -153,33 +154,50 @@ struct AssistantView: View {
         isSending = true
         Haptics.tap()
 
-        // Snapshot the conversation to send (before the streaming placeholder is added).
+        // Snapshot everything needed for the request now, while the view is on-screen, so the
+        // async work never reaches back into @Environment/@State for read-only inputs.
         let outgoing = messages
-        let assistantID = ChatMessage(role: .assistant, text: "")
+        let system = systemPrompt()
+        let store = store
 
         // @MainActor: this view's @State (messages/isSending/errorText) must only be
         // mutated on the main actor. A bare `Task {}` here would be nonisolated.
         Task { @MainActor in
             var insertedID: UUID?
+            var produced = false
             do {
-                for try await delta in claude.streamText(system: systemPrompt(), messages: outgoing) {
-                    if insertedID == nil {
-                        // First token: drop the typing indicator and start the bubble.
-                        isSending = false
-                        var bubble = assistantID
-                        bubble.text = delta
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                            messages.append(bubble)
+                let stream = claude.streamAgent(
+                    system: system,
+                    history: outgoing,
+                    tools: Self.tools,
+                    runTool: { name, input in Self.execute(tool: name, input: input, store: store) }
+                )
+                for try await event in stream {
+                    produced = true
+                    switch event {
+                    case .text(let delta):
+                        if let id = insertedID, let idx = messages.firstIndex(where: { $0.id == id }) {
+                            messages[idx].text += delta
+                        } else {
+                            // First token of a bubble: drop the typing indicator and start it.
+                            isSending = false
+                            let bubble = ChatMessage(role: .assistant, text: delta)
+                            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                                messages.append(bubble)
+                            }
+                            insertedID = bubble.id
+                            Haptics.soft()
                         }
-                        insertedID = bubble.id
-                        Haptics.soft()
-                    } else if let id = insertedID,
-                              let idx = messages.firstIndex(where: { $0.id == id }) {
-                        messages[idx].text += delta
+                    case .toolResult(let summary):
+                        isSending = false
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                            messages.append(ChatMessage(role: .assistant, text: "✓ \(summary)"))
+                        }
+                        insertedID = nil   // any follow-up text starts a fresh bubble
+                        Haptics.success()
                     }
                 }
-                if insertedID == nil {
-                    // Stream completed with no text.
+                if !produced {
                     messages.append(ChatMessage(role: .assistant, text: "(No response)"))
                 }
             } catch is CancellationError {
@@ -188,6 +206,52 @@ struct AssistantView: View {
                 errorText = error.localizedDescription
             }
             isSending = false
+        }
+    }
+
+    // MARK: - Tools Claude can call
+
+    private static let tools: [ClaudeService.ToolSpec] = [
+        .init(
+            name: "add_task",
+            description: "Add a new to-do task to the user's list. Use this whenever the user asks to add, remember, capture, or schedule something to do.",
+            inputSchema: [
+                "type": "object",
+                "properties": ["title": ["type": "string", "description": "The task text, e.g. 'Email Sam about the invoice'"]],
+                "required": ["title"]
+            ]
+        ),
+        .init(
+            name: "add_habit",
+            description: "Add a daily habit the user wants to track and build a streak on.",
+            inputSchema: [
+                "type": "object",
+                "properties": [
+                    "name": ["type": "string", "description": "The habit name, e.g. 'Drink water'"],
+                    "emoji": ["type": "string", "description": "A single emoji icon for the habit (optional)"]
+                ],
+                "required": ["name"]
+            ]
+        )
+    ]
+
+    /// Executes a tool call against the store. Runs on the main actor (store mutations are UI state).
+    @MainActor
+    private static func execute(tool name: String, input: [String: Any], store: AppStore) -> String {
+        switch name {
+        case "add_task":
+            let title = (input["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !title.isEmpty else { return "No task title was provided." }
+            store.addTask(title)
+            return "Added task “\(title)”."
+        case "add_habit":
+            let habitName = (input["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !habitName.isEmpty else { return "No habit name was provided." }
+            let emoji = (input["emoji"] as? String) ?? ""
+            store.addHabit(name: habitName, emoji: emoji)
+            return "Added habit “\(habitName)”."
+        default:
+            return "Unknown tool: \(name)."
         }
     }
 
@@ -202,6 +266,10 @@ struct AssistantView: View {
         You are DayDash, a warm, concise daily assistant for \(name). The user values calm, \
         ADHD-friendly help: short answers, concrete next steps, and no overwhelm. When asked what \
         to do, recommend ONE clear next action rather than a long list. Keep replies brief.
+
+        You can act on the user's day with tools: use `add_task` when they want to remember or \
+        capture something to do, and `add_habit` when they want to track a daily habit. Prefer \
+        calling the tool over only describing it, then briefly confirm what you did.
 
         Today's context:
         Focus task: \(focus)

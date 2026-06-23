@@ -47,6 +47,13 @@ A round of fixes from a careful read-through (still uncompiled — Xcode build i
 - Add `CompleteFocusIntent.swift` to the **DayDashWidget** target when wiring the widget, and
   enable the App Group so the command crosses processes (see `DayDashWidget-SETUP.md`).
 
+### Assistant can now act (Claude tool use)
+- `ClaudeService.streamAgent(...)` runs a **streaming** agentic loop: it streams reply text and,
+  when Claude calls a tool, executes it on the main actor and feeds the result back (bounded by
+  `maxTurns`). The raw SSE parser now also handles `tool_use` / `input_json_delta` blocks.
+- `AssistantView` defines `add_task` and `add_habit` tools (executed against `AppStore`) and shows
+  a "✓ Added …" note inline when one runs. Pure-text streaming is unchanged for the Briefing.
+
 When you finish a chunk of work, update this section so the frontier stays accurate.
 
 ---
@@ -183,6 +190,7 @@ app target does **not** compile it. Wire it per `ios/DayDashWidget-SETUP.md`.
   `DayDashWidget/CompleteFocusIntent.swift` + `SharedStore` pending-action queue +
   `AppStore.applyPendingWidgetActions()`. Needs the App Group enabled to round-trip.
 - Lock Screen / StandBy widgets.
-- Let the Assistant *add tasks* via tool use.
+- ~~Let the Assistant *add tasks* via tool use.~~ **Done** — `ClaudeService.streamAgent`
+  runs a streaming tool-use loop; `AssistantView` exposes `add_task` / `add_habit` tools.
 - More connections (Reminders, Health, Gmail/Calendar OAuth).
 - Unit/UI tests.
