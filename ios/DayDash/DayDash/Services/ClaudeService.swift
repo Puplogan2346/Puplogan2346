@@ -16,11 +16,19 @@ final class ClaudeService {
     private let model = "claude-opus-4-8"
     private let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
 
-    var hasAPIKey: Bool { (Keychain.get(Self.apiKeyKeychainKey)?.isEmpty == false) }
+    /// Whether a key is stored. Kept as a stored property (not computed off the Keychain)
+    /// so `@Observable` tracking re-renders dependent views the moment it changes — the
+    /// Settings placeholder, "Remove key" button, and the Assistant's hint all rely on this.
+    private(set) var hasAPIKey: Bool
+
+    init() {
+        hasAPIKey = (Keychain.get(Self.apiKeyKeychainKey)?.isEmpty == false)
+    }
 
     func setAPIKey(_ key: String) {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         Keychain.set(trimmed.isEmpty ? nil : trimmed, for: Self.apiKeyKeychainKey)
+        hasAPIKey = !trimmed.isEmpty
     }
 
     enum ClaudeError: LocalizedError {

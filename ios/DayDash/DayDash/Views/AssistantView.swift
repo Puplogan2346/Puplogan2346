@@ -4,7 +4,7 @@ import SwiftUI
 /// down, decide what to do first, or just talk through what's on your plate.
 struct AssistantView: View {
     @Environment(AppStore.self) private var store
-    @State private var claude = ClaudeService()
+    @Environment(ClaudeService.self) private var claude
     @State private var messages: [ChatMessage] = []
     @State private var input = ""
     @State private var isSending = false
@@ -157,7 +157,9 @@ struct AssistantView: View {
         let outgoing = messages
         let assistantID = ChatMessage(role: .assistant, text: "")
 
-        Task {
+        // @MainActor: this view's @State (messages/isSending/errorText) must only be
+        // mutated on the main actor. A bare `Task {}` here would be nonisolated.
+        Task { @MainActor in
             var insertedID: UUID?
             do {
                 for try await delta in claude.streamText(system: systemPrompt(), messages: outgoing) {
