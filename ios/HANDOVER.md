@@ -9,14 +9,16 @@ SwiftUI iPhone app: an ADHD-friendly daily dashboard with Claude AI built in.
 
 - **All code + docs are committed and pushed** to branch `claude/iphone-app-xcode-mac-a6xjjw`
   (draft PR #17). Nothing is local-only. Working tree is clean.
-- **Built so far:** full app (Today, Tasks, Habits, Brain Dump, Assistant), premium design
-  pass, **streaming** Claude replies, **daily notification**, Apple Calendar integration,
-  **widget code ready to wire**, and the run/test guides (`START-HERE.md`).
-- **NOT done yet:** the app has **not been compiled in Xcode** (built in a Linux env). The
-  widget target is **not** wired into the Xcode project yet.
-- **The next action:** open `ios/DayDash/DayDash.xcodeproj` in **Xcode 16+**, press **⌘B**,
-  and fix any compiler errors. See `START-HERE.md` for run/test steps (Simulator + iPhone).
-- **To run/test:** read `START-HERE.md`. **To wire the widget:** read `DayDashWidget-SETUP.md`.
+- **Built & RUNNING:** the app builds and runs (verified on the iPhone 17 Pro simulator). Full
+  app (Today, Tasks, Habits, Brain Dump, Assistant), premium design, **streaming** Claude
+  replies, **daily notification**, Apple Calendar integration.
+- **Home Screen widget is now WIRED** as a second target (`DayWidget`) directly in the Xcode
+  project — small + medium widgets. It shows **placeholder data** until the App Group is
+  enabled (see below); the app build is unaffected either way.
+- **To get LIVE widget data:** in Xcode, add the App Group **`group.co.daydash.app`** to BOTH
+  the `DayDash` and `DayWidget` targets (Signing & Capabilities ▸ + Capability ▸ App Groups).
+- **Next ideas:** run on a real iPhone (signing), interactive widget button, more connections.
+- **To run/test:** see `START-HERE.md`.
 
 When you finish a chunk of work, update this section so the frontier stays accurate.
 
@@ -73,9 +75,12 @@ carefully, but the first Xcode build is the real test.
 | `Views/BriefingView.swift` | One-tap AI daily briefing (also streamed). |
 | `Views/SettingsView.swift` | Name, calendar connect, **daily reminder** toggle + time, API key entry. |
 
-**Widget (not yet in an Xcode target):** `ios/DayDash/DayDashWidget/` — `DayDashWidget.swift`,
-`DayDashWidgetBundle.swift`. Intentionally a sibling of the app's synchronized group so the
-app target does **not** compile it. Wire it per `ios/DayDashWidget-SETUP.md`.
+**Widget target (`DayWidget`):** `ios/DayDash/DayWidget/` — `DayWidgetBundle.swift` (@main),
+`DayWidget.swift` (provider + small/medium views), `WidgetShared.swift` (its own copy of
+`WidgetSnapshot`/`SharedStore`/`AppGroup` — separate target, so duplicate type names are fine),
+`Info.plist` (NSExtension). It's a sibling of the app's synchronized group and has its own
+synchronized group, so the app target doesn't compile it. The app embeds it via an "Embed
+Foundation Extensions" phase + target dependency (already wired in the pbxproj).
 
 ---
 
@@ -87,7 +92,7 @@ app target does **not** compile it. Wire it per `ios/DayDashWidget-SETUP.md`.
 - **Local daily check-in** notification (Settings toggle + time picker).
 - Premium design: SF Rounded type, time-of-day living gradient, glass cards, gradient/glow
   progress ring, spring motion, SF Symbol effects, layered haptics, custom app icon.
-- Home Screen **widget** code (small + medium) — ready to wire.
+- Home Screen **widget** (small + medium) — wired as the `DayWidget` target.
 
 ---
 
@@ -102,10 +107,12 @@ app target does **not** compile it. Wire it per `ios/DayDashWidget-SETUP.md`.
 5. **Reminders:** Settings → Daily check-in → toggle on, pick a time.
 6. **Run on a physical iPhone:** target → Signing & Capabilities → select your personal team;
    change the bundle id `co.daydash.app` → e.g. `com.yourname.daydash`.
-7. **Home Screen widget:** follow `ios/DayDashWidget-SETUP.md` (≈5 min: add Widget Extension
-   target, add the 3 files to target membership, enable App Group `group.co.daydash.app` on
-   **both** targets). If you changed the bundle id, also update `AppGroup.id` in
-   `Shared/SharedStore.swift`.
+7. **Home Screen widget:** already wired as the `DayWidget` target — long-press the Home
+   Screen → + → search "DayDash" → add the **Today** widget. It shows placeholder data until
+   you add the App Group **`group.co.daydash.app`** to BOTH the `DayDash` and `DayWidget`
+   targets (Signing & Capabilities ▸ + Capability ▸ App Groups), which turns on live data.
+   If you changed the app bundle id, keep `AppGroup.id` in `Shared/SharedStore.swift` and
+   `DayWidget/WidgetShared.swift` matching the group you create.
 
 ---
 
@@ -144,7 +151,7 @@ app target does **not** compile it. Wire it per `ios/DayDashWidget-SETUP.md`.
 > [If you have build errors:] Here are the Xcode build errors from ⌘B: `<paste errors>`
 >
 > [Or pick a task:] Help me (a) get a clean build, (b) wire the Home Screen widget target per
-> `ios/DayDashWidget-SETUP.md`, or (c) add <feature>.
+> the App Group for live widget data, or (c) add <feature>.
 
 ---
 

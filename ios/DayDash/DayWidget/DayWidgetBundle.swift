@@ -2,8 +2,8 @@ import WidgetKit
 import SwiftUI
 
 @main
-struct DayDashWidgetBundle: WidgetBundle {
+struct DayWidgetBundle: WidgetBundle {
     var body: some Widget {
-        DayDashWidget()
+        DayWidget()
     }
 }

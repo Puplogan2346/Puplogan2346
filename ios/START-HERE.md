@@ -1,7 +1,7 @@
 # DayDash — START HERE (run & test guide)
 
 Everything you need to build, run, and test DayDash — no chat required. For architecture and
-"continue the project" info, see `HANDOVER.md`. For the widget, see `DayDashWidget-SETUP.md`.
+"continue the project" info, see `HANDOVER.md`.
 
 - **Repo:** `puplogan2346/puplogan2346`  ·  **Branch:** `claude/iphone-app-xcode-mac-a6xjjw`  ·  **PR:** #17
 - **Project:** `ios/DayDash/DayDash.xcodeproj`  ·  **Requires:** Xcode 16+, iOS 17+
@@ -78,9 +78,14 @@ the AI works with no key.
 
 ---
 
-## 6) Home Screen widget (later — needs ~5 min in Xcode)
-Not active yet. When ready, follow **`DayDashWidget-SETUP.md`** (add a Widget Extension target,
-add 3 files to it, enable App Group `group.co.daydash.app` on both targets).
+## 6) Home Screen widget (already built in)
+The **`DayWidget`** target is already wired into the project. After running the app once:
+long-press the Home Screen → **+** → search **DayDash** → add the **Today** widget (small or medium).
+
+It shows placeholder data until you flip on data sharing: in Xcode, select the **DayDash**
+target → **Signing & Capabilities** → **+ Capability** → **App Groups** → add
+**`group.co.daydash.app`**; then do the same on the **DayWidget** target. Re-run → the widget
+shows your real focus + progress.
 
 ---
 

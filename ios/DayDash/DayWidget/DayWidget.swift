@@ -1,31 +1,29 @@
 import WidgetKit
 import SwiftUI
 
-// Palette (kept local so the widget target needs no app-target files beyond SharedStore.swift).
+// Palette (kept local so the widget target is self-contained).
 private let peach = Color(red: 0.95, green: 0.65, blue: 0.49)
 private let terracotta = Color(red: 0.71, green: 0.34, blue: 0.29)
-private let amber = Color(red: 0.96, green: 0.74, blue: 0.42)
 
 // MARK: - Timeline
 
-struct DayDashEntry: TimelineEntry {
+struct DayWidgetEntry: TimelineEntry {
     let date: Date
     let snapshot: WidgetSnapshot
 }
 
-struct DayDashProvider: TimelineProvider {
-    func placeholder(in context: Context) -> DayDashEntry {
-        DayDashEntry(date: Date(), snapshot: .placeholder)
+struct DayWidgetProvider: TimelineProvider {
+    func placeholder(in context: Context) -> DayWidgetEntry {
+        DayWidgetEntry(date: Date(), snapshot: .placeholder)
     }
 
-    func getSnapshot(in context: Context, completion: @escaping (DayDashEntry) -> Void) {
-        completion(DayDashEntry(date: Date(), snapshot: SharedStore.read()))
+    func getSnapshot(in context: Context, completion: @escaping (DayWidgetEntry) -> Void) {
+        completion(DayWidgetEntry(date: Date(), snapshot: SharedStore.read()))
     }
 
-    func getTimeline(in context: Context, completion: @escaping (Timeline<DayDashEntry>) -> Void) {
-        let entry = DayDashEntry(date: Date(), snapshot: SharedStore.read())
-        // The app reloads timelines whenever data changes; this hourly refresh is a fallback
-        // so the greeting stays current even if the app hasn't run.
+    func getTimeline(in context: Context, completion: @escaping (Timeline<DayWidgetEntry>) -> Void) {
+        let entry = DayWidgetEntry(date: Date(), snapshot: SharedStore.read())
+        // The app reloads timelines whenever data changes; this hourly refresh is a fallback.
         let next = Calendar.current.date(byAdding: .hour, value: 1, to: Date()) ?? Date().addingTimeInterval(3600)
         completion(Timeline(entries: [entry], policy: .after(next)))
     }
@@ -33,10 +31,10 @@ struct DayDashProvider: TimelineProvider {
 
 // MARK: - Widget
 
-struct DayDashWidget: Widget {
+struct DayWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "DayDashWidget", provider: DayDashProvider()) { entry in
-            DayDashWidgetView(entry: entry)
+        StaticConfiguration(kind: "DayWidget", provider: DayWidgetProvider()) { entry in
+            DayWidgetView(entry: entry)
                 .containerBackground(for: .widget) {
                     LinearGradient(colors: [peach.opacity(0.9), terracotta],
                                    startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -50,9 +48,9 @@ struct DayDashWidget: Widget {
 
 // MARK: - Views
 
-struct DayDashWidgetView: View {
+struct DayWidgetView: View {
     @Environment(\.widgetFamily) private var family
-    let entry: DayDashEntry
+    let entry: DayWidgetEntry
 
     var body: some View {
         switch family {
@@ -116,7 +114,6 @@ struct DayDashWidgetView: View {
     }
 }
 
-/// Self-contained progress ring for the widget.
 private struct MiniRing: View {
     var progress: Double
     var label: String

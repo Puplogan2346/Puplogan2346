@@ -18,7 +18,7 @@ counterpart to the web Workday Checklist in the repo root.
 - **Daily Briefing** — one tap (✨) for an AI-written, encouraging plan for the day (also streamed).
 - **Daily check-in** — an optional gentle **local notification** at a time you choose.
 - **Home Screen widget** — small/medium widget showing your focus + progress
-  (ready to wire — see [`DayDashWidget-SETUP.md`](DayDashWidget-SETUP.md)).
+  (wired as the `DayWidget` target; shows live data once the App Group is enabled on both targets).
 - **Connections** — connects to your **Apple Calendar** on-device via EventKit.
 
 ## Open it on your Mac
