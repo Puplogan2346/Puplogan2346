@@ -11,13 +11,26 @@ SwiftUI iPhone app: an ADHD-friendly daily dashboard with Claude AI built in.
   (draft PR #17). Nothing is local-only. Working tree is clean.
 - **Built & RUNNING:** the app builds and runs (verified on the iPhone 17 Pro simulator). Full
   app (Today, Tasks, Habits, Brain Dump, Assistant), premium design, **streaming** Claude
-  replies, **daily notification**, Apple Calendar integration.
+  replies, **daily notification**, Apple Calendar integration. First Xcode compile (2026-06-30,
+  Xcode 26.4.1 / iOS 26 SDK) was **clean — 0 errors, 0 warnings**.
+- **✅ Automated tests (2026-06-30).** Added a **`DayDashUITests`** UI-test target (smoke tests):
+  launches the app, visits all five tabs, asserts each renders, screenshots each. Both tests
+  pass. Run with:
+  `xcodebuild test -project ios/DayDash/DayDash.xcodeproj -scheme DayDash -destination 'platform=iOS Simulator,name=iPhone 17 Pro'`
 - **Home Screen widget is now WIRED** as a second target (`DayWidget`) directly in the Xcode
   project — small + medium widgets. It shows **placeholder data** until the App Group is
-  enabled (see below); the app build is unaffected either way.
+  enabled (see below); the app build is unaffected either way. (Two packaging bugs in the
+  initial widget wiring were fixed on 2026-06-30 so it actually compiles + embeds: its
+  `Info.plist` was completed with the standard `CFBundle*` keys, and a synchronized-group
+  membership exception stops that `Info.plist` from being double-processed. Verified by the
+  combined `xcodebuild test`.)
 - **To get LIVE widget data:** in Xcode, add the App Group **`group.co.daydash.app`** to BOTH
   the `DayDash` and `DayWidget` targets (Signing & Capabilities ▸ + Capability ▸ App Groups).
-- **Next ideas:** run on a real iPhone (signing), interactive widget button, more connections.
+  ⚠️ **App Groups require a paid Apple Developer account** — a free Apple ID can't provision
+  them, so the widget stays on placeholder data when running with a free team. The app and all
+  other features are unaffected.
+- **Next ideas:** run on a real iPhone (signing), exercise the AI with a real Anthropic key,
+  interactive widget button, more connections, unit tests for model/streak logic.
 - **To run/test:** see `START-HERE.md`.
 
 When you finish a chunk of work, update this section so the frontier stays accurate.
@@ -43,11 +56,14 @@ stays green regardless of iOS changes.
 ## Current status
 
 ✅ Built across four rounds: scaffold → premium design pass → streaming + notifications +
-widget prep → pre-Xcode review. **Not yet compiled in Xcode** (development happened in a
-Linux environment with no Xcode/macOS). Code was written against iOS 17 APIs and read
-carefully, but the first Xcode build is the real test.
+widget prep → pre-Xcode review. **✅ Now compiles & runs in Xcode** (2026-06-30, Xcode 26.4.1,
+iOS 26 SDK): first build was clean (0 errors / 0 warnings), the app launches on the Simulator,
+and `DayDashUITests` smoke tests (all five tabs) pass. The widget is wired as the `DayWidget`
+target.
 
-**The #1 next action: open in Xcode and do ⌘B, then fix any compiler errors.**
+**The #1 next action is no longer "get it to compile" — it does.** Next: run on a physical
+iPhone, exercise the AI with a real key, and (optionally, paid account) enable the widget's
+App Group for live data.
 
 ---
 
@@ -125,7 +141,8 @@ Foundation Extensions" phase + target dependency (already wired in the pbxproj).
   (point it at your endpoint).
 - **Widget data sharing needs the App Group enabled on both targets** or the widget shows
   placeholder data (the app itself still works via the fallback container).
-- **No automated UI/unit tests yet** for the iOS app.
+- **UI smoke tests exist** (`DayDashUITests`, all-tabs launch test); no unit tests yet for the
+  model/logic layer (e.g. `Habit` streak math, `WidgetSnapshot.progress`).
 - Streaming uses raw SSE parsing (no Swift SDK exists). If Anthropic changes the event shape,
   the parser is in `ClaudeService.streamText`.
 
