@@ -20,6 +20,28 @@
 
   const el = {};
 
+  // ---- modal accessibility: focus trap + restore focus (shared with auth.js) ----
+  function modalTrap(overlay, modal) {
+    overlay._prevFocus = document.activeElement;
+    const sel = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+    const visible = () => [...modal.querySelectorAll(sel)].filter((n) => n.offsetParent !== null);
+    overlay._trap = (e) => {
+      if (e.key !== "Tab") return;
+      const f = visible(); if (!f.length) return;
+      const first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", overlay._trap);
+    const f = visible(); if (f.length) f[0].focus();
+  }
+  function modalRelease(overlay) {
+    if (overlay._trap) document.removeEventListener("keydown", overlay._trap);
+    if (overlay._prevFocus && overlay._prevFocus.focus) { try { overlay._prevFocus.focus(); } catch (e) {} }
+  }
+  WC.modalTrap = modalTrap;
+  WC.modalRelease = modalRelease;
+
   // =====================================================================
   // Init
   // =====================================================================
@@ -39,19 +61,29 @@
 
     Store.onChange = render;
     Store.onAuthChange = () => { notified.clear(); render(); Auth.render(); checkNewDay(); };
+    Store.onRecovery = () => Auth.openRecovery();
+    Store.onSync = (state) => Auth.setSync(state);
+    window.addEventListener("online", () => { Auth.setSync("synced"); if (Store.cloud) Store.flushOutbox(); });
+    window.addEventListener("offline", () => Auth.setSync("offline"));
 
     bindEvents();
     Auth.init();
     await Store.init();
     render();
     checkNewDay();
+
+    // Resume a Google import/export that was started before the OAuth redirect.
+    const gIntent = Store.consumeGoogleIntent && Store.consumeGoogleIntent();
+    if (gIntent && Store.cloud && Store.hasGoogleToken && Store.hasGoogleToken()) {
+      toast("Connected to Google — finishing…", null);
+      runGoogleIntent(gIntent);
+    }
+
     el.taskInput.focus();
 
-    // Reminders
-    if ("Notification" in window && Notification.permission === "granted") {
-      el.enableReminders.classList.add("active");
-      el.enableReminders.textContent = "🔔 Reminders on";
-    }
+    // Reminders (in-tab now; push state resolves once the SW is ready)
+    updateRemindersBtn();
+    Store.refreshPushState().then(updateRemindersBtn);
     checkReminders();
     setInterval(checkReminders, 30000);
   }
@@ -97,19 +129,23 @@
     el.streak.innerHTML =
       `🔥 <strong>${s.streak}</strong>-day streak` +
       ` · <strong>${s.perfectDays}</strong> perfect day${s.perfectDays === 1 ? "" : "s"}` +
-      ` · <strong>${s.totalCompleted}</strong> tasks done all-time`;
+      ` · <strong>${s.totalCompleted}</strong> task${s.totalCompleted === 1 ? "" : "s"} done all-time`;
 
     if (allDone && !wasAllDone && !reducedMotion) confetti();
     wasAllDone = allDone;
 
     // List
-    const visible = tasks.filter((t) => (filter === "active" ? !t.done : filter === "done" ? t.done : true));
+    const visible = tasks.filter((t) =>
+      filter === "active" ? !t.done :
+      filter === "done" ? t.done :
+      filter === "flagged" ? t.flagged : true);
     el.list.innerHTML = "";
     if (visible.length === 0) {
       const empty = document.createElement("div");
       empty.className = "empty";
       if (total === 0) empty.innerHTML = '<span class="big">📝</span>No tasks yet — add one above, or apply your <strong>⭐ template</strong>.';
       else if (filter === "active") empty.innerHTML = '<span class="big">✅</span>Nothing active. Everything is checked off!';
+      else if (filter === "flagged") empty.innerHTML = '<span class="big">⚑</span>No flagged tasks. Flag important ones with the ⚐ button.';
       else empty.innerHTML = '<span class="big">🗂️</span>Nothing here for this filter yet.';
       el.list.appendChild(empty);
     } else {
@@ -122,7 +158,7 @@
   function taskNode(t) {
     const editable = Store.canEdit;
     const li = document.createElement("li");
-    li.className = "task" + (t.done ? " done" : "") + (isOverdue(t) ? " overdue" : "");
+    li.className = "task" + (t.done ? " done" : "") + (isOverdue(t) ? " overdue" : "") + (t.flagged ? " flagged" : "");
     li.dataset.id = t.id;
     li.draggable = editable;
 
@@ -174,11 +210,13 @@
 
     const actions = document.createElement("div");
     actions.className = "actions";
+    const flagBtn = mkBtn(t.flagged ? "⚑" : "⚐", t.flagged ? "Remove flag" : "Flag as important", () => Store.updateTask(t.id, { flagged: !t.flagged }));
+    flagBtn.classList.add("flag"); if (t.flagged) flagBtn.classList.add("active");
     const dueBtn = mkBtn("⏰", "Set due time"); if (t.due) dueBtn.classList.add("active");
     const noteBtn = mkBtn("🗒", "Add a note"); if (t.note) noteBtn.classList.add("active");
     const del = mkBtn("×", "Delete task", () => deleteTask(t)); del.classList.add("del");
-    dueBtn.disabled = noteBtn.disabled = del.disabled = !editable;
-    actions.append(dueBtn, noteBtn, del);
+    flagBtn.disabled = dueBtn.disabled = noteBtn.disabled = del.disabled = !editable;
+    actions.append(flagBtn, dueBtn, noteBtn, del);
 
     main.append(handle, reorder, check, body, actions);
 
@@ -217,6 +255,29 @@
     b.className = "icon-btn"; b.textContent = text; b.title = label; b.setAttribute("aria-label", label);
     if (onClick) b.addEventListener("click", onClick);
     return b;
+  }
+
+  const DAY_NAMES = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+  function makeDayPicker(selected, onChange) {
+    const wrap = document.createElement("div"); wrap.className = "day-picker"; wrap.setAttribute("role", "group"); wrap.setAttribute("aria-label", "Repeat on days");
+    const sel = new Set((selected || []).map(Number));
+    DAY_NAMES.forEach((nm, i) => {
+      const b = document.createElement("button"); b.type = "button"; b.className = "day-toggle" + (sel.has(i) ? " on" : "");
+      b.textContent = nm; b.setAttribute("aria-pressed", String(sel.has(i))); b.setAttribute("aria-label", "Repeat on " + nm);
+      b.addEventListener("click", () => {
+        if (sel.has(i)) sel.delete(i); else sel.add(i);
+        b.classList.toggle("on"); b.setAttribute("aria-pressed", String(sel.has(i)));
+        if (onChange) onChange(wrap.get());
+      });
+      wrap.appendChild(b);
+    });
+    wrap.get = () => [...sel].sort((a, b) => a - b);
+    wrap.reset = () => { sel.clear(); [...wrap.children].forEach((c) => { c.classList.remove("on"); c.setAttribute("aria-pressed", "false"); }); };
+    return wrap;
+  }
+  function daysLabel(days) {
+    if (!days || !days.length) return "Every day";
+    return days.map((d) => DAY_NAMES[d]).join(" ");
   }
 
   // =====================================================================
@@ -258,7 +319,7 @@
   }
   function refreshStreak() {
     const s = History.stats(Store.history || []);
-    el.streak.innerHTML = `🔥 <strong>${s.streak}</strong>-day streak · <strong>${s.perfectDays}</strong> perfect day${s.perfectDays === 1 ? "" : "s"} · <strong>${s.totalCompleted}</strong> tasks done all-time`;
+    el.streak.innerHTML = `🔥 <strong>${s.streak}</strong>-day streak · <strong>${s.perfectDays}</strong> perfect day${s.perfectDays === 1 ? "" : "s"} · <strong>${s.totalCompleted}</strong> task${s.totalCompleted === 1 ? "" : "s"} done all-time`;
   }
 
   // =====================================================================
@@ -278,13 +339,37 @@
   // =====================================================================
   // Reminders
   // =====================================================================
-  function requestReminders() {
+  async function requestReminders() {
+    const cfg = window.WC_CONFIG || {};
+    const canPush = Store.cloud && cfg.vapidPublicKey && Store.pushSupported;
+    if (canPush) {
+      try {
+        if (Store.pushEnabled) { await Store.disablePush(); toast("Push reminders off", null); }
+        else { await Store.enablePush(); toast("Push reminders on — you'll be reminded even when the app is closed.", null); }
+      } catch (e) { alert(pushErr(e)); }
+      updateRemindersBtn();
+      return;
+    }
+    // Fallback: in-tab notifications (work only while the app is open).
     if (!("Notification" in window)) { alert("This browser doesn't support notifications."); return; }
     Notification.requestPermission().then((p) => {
-      el.enableReminders.classList.toggle("active", p === "granted");
-      el.enableReminders.textContent = p === "granted" ? "🔔 Reminders on" : "🔔 Reminders";
+      updateRemindersBtn();
       if (p === "denied") alert("Reminders are blocked. Enable notifications for this page in your browser settings.");
     });
+  }
+  function updateRemindersBtn() {
+    const granted = ("Notification" in window) && Notification.permission === "granted";
+    if (Store.pushEnabled) { el.enableReminders.classList.add("active"); el.enableReminders.textContent = "🔔 Push on"; }
+    else if (granted) { el.enableReminders.classList.add("active"); el.enableReminders.textContent = "🔔 Reminders on"; }
+    else { el.enableReminders.classList.remove("active"); el.enableReminders.textContent = "🔔 Reminders"; }
+  }
+  function pushErr(e) {
+    const m = (e && e.message) || "";
+    if (/blocked/i.test(m)) return "Notifications are blocked. Enable them for this site in your browser settings.";
+    if (/not configured/i.test(m)) return "Push reminders aren't set up yet (no VAPID key in config).";
+    if (/doesn't support/i.test(m)) return m;
+    if (/sign in/i.test(m)) return m;
+    return "Couldn't enable push reminders: " + (m || "unknown error");
   }
   function checkReminders() {
     if (!("Notification" in window) || Notification.permission !== "granted") return;
@@ -301,8 +386,9 @@
   // =====================================================================
   function checkNewDay() {
     const { changed } = Store.isNewDay();
-    if (changed && Store.templates.length > 0) {
-      el.bannerText.textContent = `New day! Apply your daily template (${Store.templates.length} task${Store.templates.length > 1 ? "s" : ""})?`;
+    const todays = Store.templatesForDay(new Date().getDay());
+    if (changed && todays.length > 0) {
+      el.bannerText.textContent = `New day! Apply your daily template (${todays.length} task${todays.length > 1 ? "s" : ""})?`;
       el.templateBanner.classList.add("show");
     }
     Store.markDaySeen();
@@ -343,9 +429,13 @@
   function openTemplates() {
     const overlay = buildOverlay("Daily template", (modal) => {
       const sub = document.createElement("p"); sub.className = "sub";
-      sub.textContent = "Recurring tasks for every work day. Apply with one click, or you'll be prompted each new day.";
+      sub.textContent = "Recurring tasks. Apply with one click, or you'll be prompted each new day. Pick days to repeat only on those (none = every day).";
       const form = document.createElement("form"); form.className = "tmpl-add";
       form.innerHTML = '<input type="text" placeholder="Recurring task…" autocomplete="off" /><input type="time" aria-label="Default due time" /><button class="btn-primary" type="submit">Add</button>';
+      const pickerRow = document.createElement("div"); pickerRow.className = "tmpl-days-row";
+      const pickerLabel = document.createElement("span"); pickerLabel.className = "acct-muted"; pickerLabel.textContent = "Repeat:";
+      const picker = makeDayPicker([]);
+      pickerRow.append(pickerLabel, picker);
       const list = document.createElement("ul"); list.className = "tmpl-list";
       const actions = document.createElement("div"); actions.className = "modal-actions";
       const saveBtn = document.createElement("button"); saveBtn.className = "btn-ghost"; saveBtn.textContent = "Save today's list as template";
@@ -357,16 +447,22 @@
         if (!Store.templates.length) { const e = document.createElement("li"); e.className = "tmpl-empty"; e.textContent = "No recurring tasks yet."; list.appendChild(e); return; }
         for (const item of Store.templates) {
           const li = document.createElement("li"); li.className = "tmpl-item";
-          li.innerHTML = `<span class="t-text">${esc(item.text)}</span><span class="t-time">${item.due ? "⏰ " + fmtDue(item.due) : ""}</span>`;
+          const head = document.createElement("div"); head.className = "tmpl-item-head";
+          head.innerHTML = `<span class="t-text">${esc(item.text)}</span><span class="t-time">${item.due ? "⏰ " + fmtDue(item.due) : ""}</span>`;
           const del = mkBtn("×", "Remove", async () => { await Store.removeTemplate(item.id); renderList(); }); del.classList.add("del");
-          li.appendChild(del); list.appendChild(li);
+          head.appendChild(del);
+          const itemPicker = makeDayPicker(item.days, (days) => Store.updateTemplate(item.id, { days }));
+          const lbl = document.createElement("span"); lbl.className = "tmpl-days-label acct-muted"; lbl.textContent = daysLabel(item.days);
+          itemPicker.addEventListener("click", () => { lbl.textContent = daysLabel(itemPicker.get()); });
+          const daysRow = document.createElement("div"); daysRow.className = "tmpl-days-row"; daysRow.append(itemPicker, lbl);
+          li.append(head, daysRow); list.appendChild(li);
         }
       }
-      form.addEventListener("submit", async (e) => { e.preventDefault(); const txt = form.children[0].value.trim(); if (!txt) return; await Store.addTemplate(txt, form.children[1].value); form.children[0].value = ""; form.children[1].value = ""; renderList(); form.children[0].focus(); });
+      form.addEventListener("submit", async (e) => { e.preventDefault(); const txt = form.children[0].value.trim(); if (!txt) return; await Store.addTemplate(txt, form.children[1].value, picker.get()); form.children[0].value = ""; form.children[1].value = ""; picker.reset(); renderList(); form.children[0].focus(); });
       saveBtn.addEventListener("click", async () => { if (!Store.tasks.length) { alert("No tasks to save yet."); return; } if (Store.templates.length && !confirm("Replace your current template with today's list?")) return; await Store.setTemplatesFromTasks(); renderList(); });
       applyBtn.addEventListener("click", async () => { await Store.applyTemplate(); closeOverlay(overlay); });
 
-      modal.append(sub, form, list, actions);
+      modal.append(sub, form, pickerRow, list, actions);
       renderList();
     });
   }
@@ -429,6 +525,78 @@
     });
   }
 
+  // Import: paste a list, or bring in a file (.ics / .csv / .json / text)
+  let pendingImportOverlay = null;
+  async function importItems(items, label) {
+    if (!items || !items.length) { toast("Nothing to import" + (label ? " from " + label : ""), null); return; }
+    const prev = snapshot();
+    await Store.addTasksBulk(items);
+    const n = items.length;
+    toast(`Imported ${n} task${n > 1 ? "s" : ""}`, Store.cloud ? null : () => Store.replaceTasks(prev));
+  }
+  function openImport() {
+    pendingImportOverlay = buildOverlay("Import tasks", (modal) => {
+      const sub = document.createElement("p"); sub.className = "sub";
+      sub.textContent = "Bring in a list from anywhere — paste it below, or import a file.";
+      const ta = document.createElement("textarea"); ta.className = "import-paste";
+      ta.placeholder = 'One task per line. Optional time at the end, e.g. "Standup 09:30".';
+      const pasteBtn = document.createElement("button"); pasteBtn.className = "btn-primary import-full"; pasteBtn.textContent = "Import pasted tasks";
+      const divider = document.createElement("div"); divider.className = "auth-divider"; divider.innerHTML = "<span>or</span>";
+      const fileBtn = document.createElement("button"); fileBtn.className = "btn-ghost import-full"; fileBtn.textContent = "Choose a file (.ics, .csv, .json, .txt)";
+      const note = document.createElement("p"); note.className = "tmpl-empty";
+      note.textContent = "Calendar (.ics) events and spreadsheet (.csv) rows become tasks; JSON backups are restored.";
+      pasteBtn.addEventListener("click", async () => {
+        await importItems(WC.Import.parseText(ta.value), "paste");
+        closeOverlay(pendingImportOverlay); pendingImportOverlay = null;
+      });
+      fileBtn.addEventListener("click", () => el.importFile.click());
+      modal.append(sub, ta, pasteBtn, divider, fileBtn, note);
+
+      // Google connections (cloud + signed in only).
+      if (Store.cloud && Store.user) {
+        const gdiv = document.createElement("div"); gdiv.className = "auth-divider"; gdiv.innerHTML = "<span>or connect Google</span>";
+        const gcal = document.createElement("button"); gcal.className = "btn-ghost import-full"; gcal.textContent = "📅 Import Google Calendar (today)";
+        const gtask = document.createElement("button"); gtask.className = "btn-ghost import-full"; gtask.textContent = "✓ Import Google Tasks";
+        const gpush = document.createElement("button"); gpush.className = "btn-ghost import-full"; gpush.textContent = "⤴ Send this list to Google Tasks";
+        gcal.addEventListener("click", () => googleAction("import-calendar"));
+        gtask.addEventListener("click", () => googleAction("import-tasks"));
+        gpush.addEventListener("click", () => googleAction("push-tasks"));
+        const gnote = document.createElement("p"); gnote.className = "tmpl-empty";
+        gnote.textContent = "First use sends you to Google to grant access, then returns here and finishes automatically.";
+        modal.append(gdiv, gcal, gtask, gpush, gnote);
+      }
+    });
+  }
+
+  // Google import/export. If we don't have a fresh token, redirect to connect
+  // (stashing the intent); on return we resume via runGoogleIntent().
+  async function googleAction(intent) {
+    if (!Store.cloud || !Store.user) { toast("Sign in first to connect Google", null); return; }
+    if (!Store.hasGoogleToken()) {
+      toast("Redirecting to Google…", null);
+      try { await Store.connectGoogle(intent); } catch (e) { toast(googleErr(e), null); }
+      return; // page redirects to Google
+    }
+    await runGoogleIntent(intent);
+  }
+  async function runGoogleIntent(intent) {
+    try {
+      if (intent === "import-calendar") await importItems(await Store.fetchGoogleCalendarToday(), "Google Calendar");
+      else if (intent === "import-tasks") await importItems(await Store.fetchGoogleTasks(), "Google Tasks");
+      else if (intent === "push-tasks") {
+        const n = await Store.pushToGoogleTasks(Store.tasks);
+        toast(`Sent ${n} task${n !== 1 ? "s" : ""} to Google Tasks`, null);
+      }
+    } catch (e) { toast(googleErr(e), null); }
+    if (pendingImportOverlay && document.body.contains(pendingImportOverlay)) { closeOverlay(pendingImportOverlay); pendingImportOverlay = null; }
+  }
+  function googleErr(e) {
+    const m = (e && e.message) || "";
+    if (/not connected|expired/i.test(m)) return "Google connection needed — tap the button again to connect.";
+    if (/provider is not enabled|validation_failed/i.test(m)) return "Google isn't enabled in Supabase yet (see README).";
+    return m || "Google request failed.";
+  }
+
   // Generic overlay builder
   function buildOverlay(title, fill) {
     const overlay = document.createElement("div"); overlay.className = "overlay open";
@@ -443,15 +611,22 @@
     document.addEventListener("keydown", overlay._esc);
     document.body.appendChild(overlay);
     fill(modal);
+    modalTrap(overlay, modal);
     return overlay;
   }
-  function closeOverlay(overlay) { document.removeEventListener("keydown", overlay._esc); overlay.remove(); }
+  function closeOverlay(overlay) { document.removeEventListener("keydown", overlay._esc); modalRelease(overlay); overlay.remove(); }
 
   // =====================================================================
   // Events
   // =====================================================================
   function bindEvents() {
-    el.addForm.addEventListener("submit", (e) => { e.preventDefault(); Store.addTask(el.taskInput.value, el.timeInput.value); el.taskInput.value = ""; el.timeInput.value = ""; el.taskInput.focus(); });
+    el.addForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const parsed = WC.Quick.parse(el.taskInput.value);
+      if (!parsed.text) { el.taskInput.value = ""; return; }
+      Store.addTask(parsed.text, parsed.due || el.timeInput.value, parsed.flagged);
+      el.taskInput.value = ""; el.timeInput.value = ""; el.taskInput.focus();
+    });
 
     el.filters.addEventListener("click", (e) => {
       const btn = e.target.closest(".filter"); if (!btn) return;
@@ -474,7 +649,8 @@
       const done = Store.tasks.filter((t) => t.done); const prev = snapshot();
       const carried = Store.tasks.length - done.length;
       if (done.length) Store.removeTasks(done.map((t) => t.id)); else render();
-      if (Store.templates.length) { el.bannerText.textContent = `New day! Apply your daily template (${Store.templates.length} task${Store.templates.length > 1 ? "s" : ""})?`; el.templateBanner.classList.add("show"); }
+      const todays = Store.templatesForDay(new Date().getDay());
+      if (todays.length) { el.bannerText.textContent = `New day! Apply your daily template (${todays.length} task${todays.length > 1 ? "s" : ""})?`; el.templateBanner.classList.add("show"); }
       const msg = done.length ? `New day — ${carried} carried over, ${done.length} cleared` : `New day — ${carried} task${carried === 1 ? "" : "s"} carried over`;
       toast(msg, () => undoRemoval(prev, done));
     });
@@ -500,18 +676,24 @@
       a.href = url; a.download = `workday-checklist-${WC.todayKey()}.json`; a.click(); URL.revokeObjectURL(url);
       toast("Backup downloaded", null);
     });
-    el.importBtn.addEventListener("click", () => el.importFile.click());
+    el.importBtn.addEventListener("click", openImport);
     el.importFile.addEventListener("change", () => {
       const file = el.importFile.files[0]; if (!file) return;
       const reader = new FileReader();
       reader.onload = async () => {
         try {
-          const data = JSON.parse(reader.result);
-          if (!data || (!Array.isArray(data.tasks) && !Array.isArray(data.templates))) throw new Error("bad");
-          const prev = snapshot();
-          await Store.importData(data);
-          toast(Store.cloud ? "Backup imported into this list" : "Backup imported", Store.cloud ? null : () => Store.replaceTasks(prev));
-        } catch (e) { alert("That doesn't look like a valid Workday Checklist backup file."); }
+          const parsed = WC.Import.fromFile(file.name, reader.result);
+          if (parsed.json) {
+            const data = parsed.data;
+            if (!data || (!Array.isArray(data.tasks) && !Array.isArray(data.templates))) throw new Error("bad");
+            const prev = snapshot();
+            await Store.importData(data);
+            toast(Store.cloud ? "Backup imported into this list" : "Backup imported", Store.cloud ? null : () => Store.replaceTasks(prev));
+          } else {
+            await importItems(parsed.items, file.name);
+          }
+          if (pendingImportOverlay && document.body.contains(pendingImportOverlay)) { closeOverlay(pendingImportOverlay); pendingImportOverlay = null; }
+        } catch (e) { alert("Sorry — I couldn't read that file. Supported types: .ics calendar, .csv, .json backup, or a plain text list."); }
         el.importFile.value = "";
       };
       reader.readAsText(file);

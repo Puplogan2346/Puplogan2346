@@ -1,15 +1,22 @@
 // Service worker for offline support.
 // Bump CACHE_VERSION whenever the cached assets change to invalidate old caches.
-const CACHE_VERSION = "workday-checklist-v2";
+const CACHE_VERSION = "workday-checklist-v12";
+// Local assets that must be cached for the app to work offline.
 const ASSETS = [
   "./", "./index.html", "./manifest.json", "./icon.svg",
+  "./icon-192.png", "./icon-512.png", "./icon-512-maskable.png", "./apple-touch-icon.png",
   "./assets/app.css", "./assets/config.js", "./assets/supabase.js",
-  "./assets/store.js", "./assets/history.js", "./assets/auth.js", "./assets/app.js",
+  "./assets/store.js", "./assets/history.js", "./assets/import.js", "./assets/quickadd.js", "./assets/auth.js", "./assets/app.js",
 ];
+// Best-effort extras (cross-origin); failure here must not block install.
+const OPTIONAL = ["https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_VERSION).then((cache) => cache.addAll(ASSETS)).then(() => self.skipWaiting())
+    caches.open(CACHE_VERSION).then(async (cache) => {
+      await cache.addAll(ASSETS);
+      await Promise.all(OPTIONAL.map((u) => cache.add(u).catch(() => {})));
+    }).then(() => self.skipWaiting())
   );
 });
 
@@ -18,6 +25,34 @@ self.addEventListener("activate", (event) => {
     caches.keys().then((keys) =>
       Promise.all(keys.filter((k) => k !== CACHE_VERSION).map((k) => caches.delete(k)))
     ).then(() => self.clients.claim())
+  );
+});
+
+// Push reminders: show a notification when the server pushes a due task.
+self.addEventListener("push", (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (e) { data = { title: event.data && event.data.text() }; }
+  const title = data.title || "⏰ Task due";
+  const options = {
+    body: data.body || "",
+    tag: data.tag || "wc-reminder",
+    icon: "./icon-192.png",
+    badge: "./icon-192.png",
+    data: { url: data.url || "./index.html" },
+    requireInteraction: false,
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// Focus (or open) the app when a reminder is tapped.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || "./index.html";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      for (const c of list) { if ("focus" in c) return c.focus(); }
+      if (self.clients.openWindow) return self.clients.openWindow(url);
+    })
   );
 });
 

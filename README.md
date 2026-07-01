@@ -14,14 +14,28 @@ A plug-and-play checklist to track your work day. It runs as a **static site**
 - Add / complete / edit (double-click) / delete tasks, with **undo** on deletes
 - Reorder by drag handle or ▲▼ buttons (touch-friendly)
 - **Due times** with overdue highlighting and optional browser **reminders**
+  (in-tab by default; **push reminders that fire when the app is closed** once
+  the reminder function is deployed — see below)
 - **Per-task notes**
-- **Daily templates** — recurring tasks you can apply in one click or each new day
+- **Quick-add** — type the time and importance inline, e.g. `Email Bob 3pm !`
+  (→ task "Email Bob", due 3:00 PM, flagged)
+- **Flag important tasks** with a dedicated **Flagged** filter
+- **Daily templates** — recurring tasks you can apply in one click or each new
+  day, optionally **repeating only on chosen weekdays**
 - **Start a new day** carries unfinished tasks forward and clears completed ones
 - **History & streaks** — perfect-day tracking and a 14-day chart
 - **Accounts, sync & sharing** (cloud mode) — share a list with someone by email; edits sync live
-- Light/dark theme, keyboard shortcut (`/` to focus), accessibility-minded
-- Installable **PWA** with offline support
+- **Sign in with Google** (one tap) or email + password
+- **Password reset by email** and a live **sync status** indicator (cloud mode)
+- Light/dark theme, keyboard shortcut (`/` to focus), accessibility-minded (focus-trapped dialogs, `Esc` to close)
+- Installable **PWA** with proper home-screen icons and offline support
+- **Offline-first** (cloud mode) — changes apply instantly and queue locally,
+  then sync automatically when you're back online
 - **Export / import** JSON backups
+- **Universal import** — paste a list, or drop in a calendar (`.ics`) or
+  spreadsheet (`.csv`); each line/event/row becomes a task
+- **Google Calendar & Tasks** (cloud mode) — import today's events / your
+  Google Tasks, or push a list out to Google Tasks
 
 ## Run locally
 
@@ -48,9 +62,85 @@ serve over http — e.g. `python3 -m http.server` — rather than `file://`.)
 
 5. (Optional) In Supabase **Authentication → Providers**, decide whether email
    confirmation is required. With it off, sign-up logs you straight in.
+6. For **password reset** links to work, add your site URL under Supabase
+   **Authentication → URL Configuration** (Site URL and Redirect URLs) — e.g.
+   `https://<user>.github.io/<repo>/`. The “Forgot password?” link emails a
+   reset link back to the app, which then prompts for a new password.
 
 The anon key is meant to be public — Row Level Security in `schema.sql` is what
 protects each account's data.
+
+### Push reminders that fire when the app is closed (optional, advanced)
+
+By default, due-time reminders only fire while the app is open in a tab. To get
+notifications even when it's closed, deploy the included reminder function. This
+needs the [Supabase CLI](https://supabase.com/docs/guides/cli).
+
+1. **Run the migration** (`supabase/migrate-push.sql`) in SQL Editor — adds the
+   `push_subscriptions` table, `tasks.notified_at`, and `profiles.timezone`.
+2. **Generate VAPID keys** (one-time):
+   ```
+   npx web-push generate-vapid-keys
+   ```
+3. **Add the public key** to `assets/config.js` → `vapidPublicKey`.
+4. **Set the function secrets** (private key stays server-side):
+   ```
+   supabase secrets set VAPID_PUBLIC_KEY="<public>" \
+     VAPID_PRIVATE_KEY="<private>" \
+     VAPID_SUBJECT="mailto:you@example.com"
+   ```
+   (`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are provided automatically.)
+5. **Deploy the function**:
+   ```
+   supabase functions deploy send-reminders
+   ```
+6. **Schedule it** to run every few minutes — in Supabase **Database → Cron** (or
+   pg_cron), call the function URL on a `*/5 * * * *` schedule.
+
+Then in the app, tap **🔔 Reminders** to grant permission and subscribe this
+device. Reminders are sent for tasks you own, in your saved timezone. (Reminders
+for shared collaborators are a future enhancement.)
+
+### Enable "Sign in with Google" (optional)
+
+The app shows a **Continue with Google** button automatically; it only works
+once Google is configured as a provider:
+
+1. In **Google Cloud Console** → APIs & Services → **Credentials**, create an
+   **OAuth client ID** (type *Web application*).
+2. Under **Authorized redirect URIs**, add your Supabase callback:
+   `https://YOUR-PROJECT.supabase.co/auth/v1/callback`.
+3. Copy the **Client ID** and **Client secret** into Supabase →
+   **Authentication → Providers → Google**, and enable it.
+4. Make sure your site URL is in Supabase → **Authentication → URL
+   Configuration** (Site URL + Redirect URLs), e.g.
+   `https://<user>.github.io/<repo>/`, so Google can return you to the app.
+
+Google sign-in brings over the account's name and profile photo. No Google
+app-verification review is needed for basic sign-in.
+
+### Connect Google Calendar & Tasks (optional)
+
+The **Import** dialog can pull in today's **Google Calendar** events and your
+**Google Tasks**, and push the current list **out to Google Tasks**. This needs
+a bit more Google setup on top of sign-in:
+
+1. In **Google Cloud Console → APIs & Services → Library**, enable the
+   **Google Calendar API** and the **Google Tasks API**.
+2. In **OAuth consent screen**, add these scopes (used on demand):
+   - `.../auth/calendar.events.readonly`
+   - `.../auth/tasks`
+3. While the consent screen is in **Testing**, add your Google address under
+   **Test users** (only test users can use sensitive scopes until the app is
+   published & verified — fine for personal use).
+
+When you tap a Google action the first time, you're sent to Google to grant
+access, then returned to the app, which finishes the import/export
+automatically. The Google access token is used in-session only (no backend
+needed); the app never stores your Google password.
+
+> Note: "sensitive" scopes (Calendar/Tasks) require Google's verification
+> review before *anyone* (beyond test users) can use them.
 
 ### Using Work vs Personal
 
@@ -93,6 +183,9 @@ assets/auth.js          Sign in / sign up UI
 assets/history.js       Streak & stats helpers
 assets/app.js           UI controller (rendering + interactions)
 supabase/schema.sql     Database tables, RLS policies, share RPC
+supabase/functions/send-reminders/  Edge Function that sends push reminders
 manifest.json, sw.js    PWA manifest + offline service worker
-icon.svg                App icon
+icon.svg, icon-*.png    App icons (scalable + PNG/maskable for installs)
+apple-touch-icon.png    iOS home-screen icon
+tools/generate_icons.py Regenerates the PNG icons from the SVG artwork
 ```

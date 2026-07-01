@@ -25,6 +25,7 @@ function bootstrap({ cloud }) {
   };
   const fake = cloud ? makeFake() : null;
   if (cloud) win.supabase = { createClient: () => fake };
+  const nav = { onLine: true };
   const sandbox = {
     window: win,
     localStorage: {
@@ -34,17 +35,146 @@ function bootstrap({ cloud }) {
     },
     Date,
     console,
+    navigator: nav,
   };
   const load = (f) => {
     const code = fs.readFileSync(path.join(ASSETS, f), "utf8");
     // Expose the stubbed globals to the asset's IIFE.
-    new Function("window", "localStorage", "Date", "console", code)
-      .call(sandbox, win, sandbox.localStorage, Date, console);
+    new Function("window", "localStorage", "Date", "console", "navigator", code)
+      .call(sandbox, win, sandbox.localStorage, Date, console, nav);
   };
   load("supabase.js");
   load("store.js");
   load("history.js");
-  return { WC: win.WC, fake };
+  load("import.js");
+  load("quickadd.js");
+  return { WC: win.WC, fake, nav };
+}
+
+function testQuickAdd() {
+  console.log("\nQuick-add parser:");
+  const { WC } = bootstrap({ cloud: false });
+  const Q = WC.Quick;
+  let r = Q.parse("Email Bob 3pm");
+  assert(r.text === "Email Bob" && r.due === "15:00" && !r.flagged, "12h '3pm' -> 15:00");
+  r = Q.parse("Standup 9:30 !");
+  assert(r.text === "Standup" && r.due === "09:30" && r.flagged, "24h time + '!' flag");
+  r = Q.parse("Call vendor at 9");
+  assert(r.text === "Call vendor" && r.due === "09:00", "'at 9' -> 09:00");
+  r = Q.parse("Lunch 12pm");
+  assert(r.due === "12:00", "noon '12pm' -> 12:00");
+  r = Q.parse("Pay rent !!");
+  assert(r.text === "Pay rent" && r.due === "" && r.flagged, "flag with no time");
+  r = Q.parse("Review 1-on-1 notes");
+  assert(r.text === "Review 1-on-1 notes" && r.due === "", "leaves non-time text alone");
+}
+
+async function testOffline() {
+  console.log("\nOffline-first outbox (mock Supabase):");
+  const { WC, fake, nav } = bootstrap({ cloud: true });
+  const S = WC.Store; S.onChange = () => {};
+  await S.init();
+  const listId = S.currentListId;
+
+  // Go offline: changes apply optimistically but don't reach the DB.
+  nav.onLine = false;
+  await S.addTask("Offline task", "08:00");
+  await S.addTask("Second task", "");
+  assert(S.tasks.length === 2, "tasks appear immediately while offline (optimistic)");
+  assert(fake._db.tasks.length === 0, "nothing written to the DB while offline");
+  assert(S.outbox.length === 2, "writes are queued in the outbox");
+
+  await S.updateTask(S.tasks[0].id, { done: true });
+  assert(S.tasks[0].done && S.tasks[0].doneAt, "edits also apply optimistically offline");
+  assert(S.outbox.length === 3, "edit queued too");
+
+  // Back online: the queue flushes to the DB.
+  nav.onLine = true;
+  await S.flushOutbox();
+  assert(S.outbox.length === 0, "outbox drains once back online");
+  assert(fake._db.tasks.length === 2, "queued inserts reach the DB");
+  const dbT = fake._db.tasks.find((t) => t.text === "Offline task");
+  assert(dbT && dbT.done && dbT.done_at, "queued edit is applied in the DB (replayed in order)");
+  assert(dbT.list_id === listId, "replayed rows keep their list scope");
+
+  // A realtime change skipped while the outbox was pending is caught up on flush.
+  nav.onLine = false;
+  await S.addTask("Another offline edit", "");
+  S._missedRemote = true; // a collaborator's realtime event arrived and was skipped
+  fake._db.tasks.push({ id: "remote-1", list_id: listId, text: "From teammate", done: false, due: "", note: "", flagged: false, position: 50, created_at: new Date().toISOString(), done_at: null });
+  assert(!S.tasks.find((t) => t.text === "From teammate"), "skipped remote change is not visible while offline");
+  nav.onLine = true;
+  await S.flushOutbox();
+  assert(S.tasks.find((t) => t.text === "From teammate"), "catches up on skipped remote changes once the outbox drains");
+  assert(S.tasks.find((t) => t.text === "Another offline edit"), "own queued change survives the catch-up reload");
+}
+
+async function testRecurringTemplates() {
+  console.log("\nRecurring templates:");
+  const { WC } = bootstrap({ cloud: false });
+  const S = WC.Store; S.onChange = () => {};
+  await S.init();
+  await S.addTemplate("Daily review", "17:00");          // every day
+  await S.addTemplate("Monday plan", "", [1]);            // Mondays only
+  assert(S.templates.length === 2, "adds templates with day rules");
+  assert(S.templatesForDay(1).length === 2, "Monday includes both");
+  assert(S.templatesForDay(3).length === 1 && S.templatesForDay(3)[0].text === "Daily review", "Wednesday excludes Monday-only");
+  const mon = S.templates.find((t) => t.text === "Monday plan");
+  await S.updateTemplate(mon.id, { days: [2, 4] });
+  assert(S.templatesForDay(1).length === 1, "editing days reschedules off Monday");
+  assert(S.templatesForDay(2).length === 2, "now included on Tuesday");
+}
+
+function testImport() {
+  console.log("\nUniversal import parsers:");
+  const { WC } = bootstrap({ cloud: false });
+  const I = WC.Import;
+
+  const txt = I.parseText("Email inbox\n- Standup 09:30\n* Review @ 5:00\n\n[ ] Plan day");
+  assert(txt.length === 4, "parses one task per non-empty line");
+  assert(txt[0].text === "Email inbox" && txt[0].due === "", "plain line, no time");
+  assert(txt[1].text === "Standup" && txt[1].due === "09:30", "strips bullet + trailing time");
+  assert(txt[2].text === "Review" && txt[2].due === "05:00", "handles '@ H:MM' and pads hour");
+  assert(txt[3].text === "Plan day", "strips a checkbox marker");
+
+  const ics = I.parseICS(
+    "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:Team sync\r\nDTSTART;TZID=America/New_York:20240115T143000\r\nEND:VEVENT\r\n" +
+    "BEGIN:VEVENT\r\nSUMMARY:All-day off-site\r\nDTSTART;VALUE=DATE:20240116\r\nEND:VEVENT\r\nEND:VCALENDAR"
+  );
+  assert(ics.length === 2, "parses each VEVENT");
+  assert(ics[0].text === "Team sync" && ics[0].due === "14:30", "event summary + local start time -> due");
+  assert(ics[1].text === "All-day off-site" && ics[1].due === "", "all-day event has no due time");
+
+  const csv = I.parseCSV('Task,Due\n"Pay invoice, urgent",09:00\nCall vendor,\n');
+  assert(csv.length === 2, "parses CSV rows with header");
+  assert(csv[0].text === "Pay invoice, urgent" && csv[0].due === "09:00", "respects quoted comma + due column");
+  assert(csv[1].text === "Call vendor" && csv[1].due === "", "missing due is empty");
+
+  const f = I.fromFile("backup.json", '{"tasks":[{"text":"x"}]}');
+  assert(f.json && f.data.tasks.length === 1, "routes .json to backup data");
+  assert(I.fromFile("list.csv", "Buy milk,08:00").items[0].due === "08:00", "routes .csv to CSV parser");
+  assert(I.fromFile("notes.txt", "Just a line").items[0].text === "Just a line", "routes other text to line parser");
+
+  // Google API transforms
+  const cal = I.gcalToItems({ items: [
+    { summary: "Sync", status: "confirmed", start: { dateTime: "2024-01-15T14:30:00Z" } },
+    { summary: "Off-site", start: { date: "2024-01-16" } },
+    { summary: "Canceled", status: "cancelled", start: { dateTime: "2024-01-15T10:00:00Z" } },
+  ] });
+  assert(cal.length === 2, "gcal: skips cancelled events");
+  assert(cal[0].text === "Sync" && /^\d{2}:\d{2}$/.test(cal[0].due), "gcal: timed event yields a due time");
+  assert(cal[1].text === "Off-site" && cal[1].due === "", "gcal: all-day event has no due");
+
+  const gt = I.gtasksToItems({ items: [
+    { title: "Buy milk", status: "needsAction" },
+    { title: "Done thing", status: "completed" },
+    { title: "  ", status: "needsAction" },
+  ] });
+  assert(gt.length === 1 && gt[0].text === "Buy milk", "gtasks: only active, titled tasks");
+
+  const push = I.itemsToGtasks([{ text: "Task A", note: "hi" }, { text: "Task B" }]);
+  assert(push[0].title === "Task A" && push[0].notes === "hi", "itemsToGtasks maps title + notes");
+  assert(push[1].title === "Task B" && !("notes" in push[1]), "itemsToGtasks omits empty notes");
 }
 
 async function testLocal() {
@@ -119,6 +249,10 @@ async function testCloud() {
 (async () => {
   await testLocal();
   await testCloud();
+  testImport();
+  testQuickAdd();
+  await testRecurringTemplates();
+  await testOffline();
   console.log("");
   if (failures) { console.error(failures + " assertion(s) failed."); process.exit(1); }
   console.log("All tests passed.");

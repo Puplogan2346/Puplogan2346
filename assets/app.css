@@ -37,7 +37,13 @@ body {
   background: var(--grad);
   color: var(--text);
   min-height: 100vh;
-  padding: 22px 16px 90px;
+  /* Respect notches / home indicators on phones and installed PWAs. */
+  padding:
+    calc(22px + env(safe-area-inset-top, 0px))
+    calc(16px + env(safe-area-inset-right, 0px))
+    calc(90px + env(safe-area-inset-bottom, 0px))
+    calc(16px + env(safe-area-inset-left, 0px));
+  overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
 }
 .app { max-width: 760px; margin: 0 auto; }
@@ -55,7 +61,60 @@ a { color: var(--accent); }
   flex-wrap: wrap; margin-bottom: 14px; font-size: 0.85rem;
 }
 .acct-muted { color: var(--muted); }
+.acct-id { display: inline-flex; align-items: center; gap: 8px; }
+.acct-email { color: var(--muted); opacity: 0.7; margin-left: 4px; }
+.acct-avatar { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; vertical-align: middle; }
 .account-bar code { background: var(--surface-2); padding: 1px 5px; border-radius: 5px; }
+
+/* Sync status indicator (cloud mode) */
+.sync-status {
+  margin-left: auto; font-size: 0.75rem; color: var(--muted);
+  white-space: nowrap; display: inline-flex; align-items: center; gap: 3px;
+  transition: color 0.2s ease;
+}
+.sync-status.ok { color: var(--done); }
+.sync-status.syncing { color: var(--accent); }
+.sync-status.offline { color: var(--danger); }
+
+/* Inline "Forgot password?" link button */
+.auth-link {
+  align-self: flex-start; background: none; border: none; padding: 4px 0;
+  color: var(--accent); font-size: 0.82rem; cursor: pointer; text-decoration: underline;
+}
+.auth-link:hover { color: var(--accent-strong); }
+
+/* Continue with Google */
+.btn-google {
+  width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px;
+  background: #fff; color: #1f1f1f; border: 1px solid #dadce0; border-radius: 10px;
+  padding: 12px 16px; font-size: 0.95rem; font-weight: 600; cursor: pointer;
+  transition: box-shadow 0.15s ease, background 0.15s ease;
+}
+.btn-google:hover { background: #f8f9fa; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2); }
+.btn-google:disabled { opacity: 0.6; cursor: default; }
+.auth-divider { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 0.8rem; margin: 14px 0; }
+.auth-divider::before, .auth-divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+
+/* Import modal */
+.import-paste { width: 100%; min-height: 120px; resize: vertical; padding: 12px 14px; margin-bottom: 12px; font: inherit; }
+.import-full { width: 100%; }
+
+/* Flagged tasks + flag button */
+.task.flagged { box-shadow: inset 3px 0 0 #f59e0b; }
+.icon-btn.flag.active { color: #f59e0b; }
+
+/* Recurring weekday picker (templates) */
+.day-picker { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.day-toggle {
+  width: 30px; height: 30px; padding: 0; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface); color: var(--muted); font-size: 0.72rem;
+}
+.day-toggle.on { background: var(--accent-strong); color: #04121f; border-color: var(--accent-strong); font-weight: 700; }
+.tmpl-days-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+.tmpl-days-label { font-size: 0.75rem; }
+.tmpl-item { flex-direction: column; align-items: stretch; }
+.tmpl-item-head { display: flex; align-items: center; gap: 10px; }
+.tmpl-item-head .t-text { flex: 1; }
 
 header {
   display: flex; flex-wrap: wrap; align-items: center;
@@ -99,14 +158,14 @@ input[type="time"] { padding: 13px 12px; }
 input:focus, textarea:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2); }
 input::placeholder { color: var(--muted); }
 
-button { cursor: pointer; font-family: inherit; border: none; border-radius: 12px; }
+button { cursor: pointer; font-family: inherit; border: none; border-radius: 12px; -webkit-tap-highlight-color: transparent; }
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .btn-add { background: var(--accent-strong); color: #04121f; font-weight: 700; font-size: 1rem; padding: 0 22px; transition: filter 0.15s ease, transform 0.05s ease; }
 .btn-add:hover { filter: brightness(1.1); }
 .btn-add:active { transform: scale(0.97); }
 
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
-.filters { display: flex; gap: 8px; }
+.filters { display: flex; gap: 8px; flex-wrap: wrap; }
 .filter { background: var(--surface); border: 1px solid var(--border); color: var(--muted); padding: 8px 15px; border-radius: 999px; font-size: 0.85rem; transition: all 0.15s ease; }
 .filter:hover { color: var(--text); }
 .filter.active { background: var(--surface-2); color: var(--text); border-color: var(--accent); }
@@ -171,7 +230,7 @@ footer { display: flex; justify-content: space-between; align-items: center; mar
 .footer-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* Toast */
-.toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 160%); background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); padding: 12px 14px 12px 18px; display: flex; align-items: center; gap: 14px; font-size: 0.9rem; z-index: 60; max-width: calc(100vw - 32px); transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1); }
+.toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translate(-50%, 160%); background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); padding: 12px 14px 12px 18px; display: flex; align-items: center; gap: 14px; font-size: 0.9rem; z-index: 60; max-width: calc(100vw - 32px); transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1); }
 .toast.show { transform: translate(-50%, 0); }
 .toast .toast-undo { background: var(--accent-strong); color: #04121f; font-weight: 700; padding: 7px 14px; font-size: 0.82rem; }
 .toast .toast-undo[hidden] { display: none; }
@@ -217,9 +276,55 @@ footer { display: flex; justify-content: space-between; align-items: center; mar
 .banner .b-actions { display: flex; gap: 8px; }
 .banner button { padding: 7px 12px; font-size: 0.82rem; }
 
-@media (max-width: 520px) {
+/* ---------------------------------------------------------------------------
+   Mobile / touch layout
+   --------------------------------------------------------------------------- */
+@media (max-width: 600px) {
   h1 { font-size: 1.4rem; }
+  .date { font-size: 0.85rem; }
   .meta-line .added-time { display: none; }
+
+  /* Add row: task input gets its own full line; time + Add share the next. */
+  .add-row { gap: 8px; }
+  .add-row input[type="text"] { flex-basis: 100%; }
+  .add-row input[type="time"] { flex: 1; }
+  .btn-add { flex: 0 0 auto; padding: 0 26px; min-height: 48px; }
+
+  /* Toolbar stacks; filters wrap instead of overflowing. */
+  .toolbar { flex-direction: column; align-items: stretch; gap: 8px; }
+  .tool-actions { width: 100%; }
+  .tool-actions .pill { flex: 1; text-align: center; }
+
+  /* List switcher uses the full width. */
+  .list-switch select { max-width: none; flex: 1; }
+
+  /* Bigger, finger-friendly tap targets on task rows. */
+  .task-main { gap: 6px; padding: 12px 8px 12px 4px; }
+  .icon-btn { padding: 10px 11px; font-size: 1.1rem; }
+  .reorder .icon-btn { padding: 5px 9px; font-size: 0.85rem; }
+  .actions { gap: 0; }
+  .filter, .pill { padding: 10px 15px; }
+
+  /* Footer buttons stack into full-width, evenly sized groups. */
+  footer { flex-direction: column; align-items: stretch; gap: 8px; }
+  .footer-group { justify-content: center; }
+  .footer-btn { flex: 1; padding: 12px 12px; text-align: center; }
+
+  /* Dialogs use more of the small screen. */
+  .overlay { padding: 16px 10px calc(16px + env(safe-area-inset-bottom, 0px)); align-items: flex-start; }
+  .modal { padding: 18px; }
+  .modal-actions { justify-content: stretch; }
+  .modal-actions .btn-primary, .modal-actions .btn-ghost { flex: 1; }
+}
+
+/* Very small phones: reclaim space (drag handle is redundant with ▲▼ here). */
+@media (max-width: 380px) {
+  h1 { font-size: 1.25rem; }
+  .handle { display: none; }
+  .progress-card { padding: 16px; }
+}
+
+@media (max-width: 520px) {
   .history-grid { grid-template-columns: repeat(3, 1fr); }
 }
 @media (prefers-reduced-motion: reduce) {
