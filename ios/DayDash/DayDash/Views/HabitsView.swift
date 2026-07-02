@@ -29,7 +29,7 @@ struct HabitsView: View {
                             }
                             .buttonStyle(.plain)
 
-                            VStack(alignment: .leading, spacing: 2) {
+                            VStack(alignment: .leading, spacing: 4) {
                                 Text(habit.name).font(Theme.rounded(.body, weight: .medium))
                                 Text(habit.currentStreak > 0
                                      ? "🔥 \(habit.currentStreak)-day streak"
@@ -37,6 +37,7 @@ struct HabitsView: View {
                                     .font(Theme.rounded(.caption))
                                     .foregroundStyle(.secondary)
                                     .contentTransition(.numericText())
+                                weekDots(for: habit)
                             }
 
                             Spacer()
@@ -69,6 +70,20 @@ struct HabitsView: View {
             }
             .sheet(isPresented: $showingAdd) { addSheet }
         }
+    }
+
+    /// The last 7 days as small dots — filled when the habit was done that day.
+    private func weekDots(for habit: Habit) -> some View {
+        let cal = Calendar.current
+        let days: [Date] = (0..<7).reversed().compactMap { cal.date(byAdding: .day, value: -$0, to: Date()) }
+        return HStack(spacing: 5) {
+            ForEach(days, id: \.self) { day in
+                Circle()
+                    .fill(habit.isDone(on: day) ? Theme.terracotta : Color.primary.opacity(0.12))
+                    .frame(width: 7, height: 7)
+            }
+        }
+        .accessibilityLabel("Last seven days")
     }
 
     private var addSheet: some View {

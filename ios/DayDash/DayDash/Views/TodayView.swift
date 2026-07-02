@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 
 /// The home dashboard: everything about *today* in one calm, premium, scrollable place.
 struct TodayView: View {
@@ -8,6 +9,7 @@ struct TodayView: View {
     @State private var showingBriefing = false
     @State private var quickAdd = ""
     @State private var appeared = false
+    @State private var celebrating = false
     // Chosen once when the view is created so it doesn't re-randomize on every re-render.
     @State private var encouragement = Theme.encouragement
     @FocusState private var quickAddFocused: Bool
@@ -32,6 +34,7 @@ struct TodayView: View {
                         focusCard
                         eventsCard
                         habitsGlance
+                        momentumCard
                         quickCapture
                         Color.clear.frame(height: 8)
                     }
@@ -64,6 +67,18 @@ struct TodayView: View {
             .task {
                 if calendar.access == .granted { await calendar.loadToday() }
                 withAnimation(.smooth(duration: 0.5)) { appeared = true }
+            }
+            .onChange(of: store.dayProgress) { old, new in
+                // Fire the celebration exactly when the last open task is completed.
+                if new >= 1, old < 1, store.doneTasksToday > 0 {
+                    celebrating = true
+                }
+            }
+            .overlay {
+                if celebrating {
+                    CelebrationOverlay { celebrating = false }
+                        .transition(.opacity)
+                }
             }
         }
     }
@@ -285,6 +300,48 @@ struct TodayView: View {
                         .padding(.horizontal, 1)
                     }
                 }
+            }
+        }
+    }
+
+    // MARK: - Momentum (7-day completions)
+
+    private var momentumCard: some View {
+        let week = store.weekCompletions
+        let peak = week.map(\.count).max() ?? 0
+        return Card {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Momentum", systemImage: "chart.bar.fill")
+                    .font(Theme.rounded(.subheadline, weight: .semibold))
+                    .foregroundStyle(.secondary)
+
+                Chart(week) { day in
+                    BarMark(
+                        x: .value("Day", day.date, unit: .day),
+                        y: .value("Done", day.count),
+                        width: .ratio(0.55)
+                    )
+                    .foregroundStyle(
+                        LinearGradient(colors: [Theme.amber, Theme.terracotta],
+                                       startPoint: .top, endPoint: .bottom)
+                    )
+                    .cornerRadius(5)
+                }
+                .chartYScale(domain: 0...Double(max(peak, 3)))
+                .chartYAxis(.hidden)
+                .chartXAxis {
+                    AxisMarks(values: .stride(by: .day)) { _ in
+                        AxisValueLabel(format: .dateTime.weekday(.narrow), centered: true)
+                            .font(Theme.rounded(.caption2, weight: .medium))
+                    }
+                }
+                .frame(height: 92)
+
+                Text(peak == 0
+                     ? "Finish a task and your week starts filling in."
+                     : "Tasks finished each day this week.")
+                    .font(Theme.rounded(.caption))
+                    .foregroundStyle(.secondary)
             }
         }
     }

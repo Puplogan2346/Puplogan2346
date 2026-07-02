@@ -65,6 +65,19 @@ final class AppStore {
         return tasks.first { $0.id == id && !$0.isDone }
     }
 
+    /// Tasks completed on each of the last 7 days (oldest first) — feeds the Momentum chart.
+    var weekCompletions: [DayCompletion] {
+        let cal = Calendar.current
+        return (0..<7).reversed().map { offset in
+            let day = cal.startOfDay(for: cal.date(byAdding: .day, value: -offset, to: Date()) ?? Date())
+            let count = tasks.filter { task in
+                guard task.isDone, let done = task.completedAt else { return false }
+                return cal.isDate(done, inSameDayAs: day)
+            }.count
+            return DayCompletion(date: day, count: count)
+        }
+    }
+
     // MARK: - Settings mutations
 
     func setUserName(_ name: String) {
@@ -138,6 +151,13 @@ final class AppStore {
 
     func deleteNotes(at offsets: IndexSet) {
         notes.remove(atOffsets: offsets)
+        persist(notes, to: .notes)
+    }
+
+    /// Promote a brain-dump note into a task (the note is consumed).
+    func makeTask(from note: Note) {
+        addTask(note.text)
+        notes.removeAll { $0.id == note.id }
         persist(notes, to: .notes)
     }
 

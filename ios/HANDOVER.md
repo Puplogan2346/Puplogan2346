@@ -29,6 +29,13 @@ SwiftUI iPhone app: an ADHD-friendly daily dashboard with Claude AI built in.
   ⚠️ **App Groups require a paid Apple Developer account** — a free Apple ID can't provision
   them, so the widget stays on placeholder data when running with a free team. The app and all
   other features are unaffected.
+- **PR #17 was MERGED to `main`** — DayDash is the official baseline. Follow-up work happens on
+  fresh branches off `main`.
+- **"Depth & delight" round (branch restarted off main):** Momentum 7-day chart on Today
+  (Swift Charts), weekly dots per habit, first-run Welcome screen (skipped when launched with
+  `-skipOnboarding`, which the UI tests now pass), Brain Dump swipe-right → task
+  (`AppStore.makeTask(from:)`), confetti CelebrationOverlay when the day hits 100%
+  (Canvas + TimelineView, respects Reduce Motion). Written off-Mac — needs an Xcode build pass.
 - **Next ideas:** run on a real iPhone (signing), exercise the AI with a real Anthropic key,
   interactive widget button, more connections, unit tests for model/streak logic.
 - **To run/test:** see `START-HERE.md`.
