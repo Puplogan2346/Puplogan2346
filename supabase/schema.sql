@@ -155,7 +155,11 @@ grant update (display_name) on table public.profiles to authenticated;
 grant select, insert, update, delete on table public.lists, public.tasks,
   public.templates, public.history to authenticated;
 grant select, delete on table public.list_shares to authenticated;
--- No client role receives any privilege on security_audit_events.
+-- No client role receives any privilege on security_audit_events. The explicit
+-- deny policy documents that this audit trail is server-only.
+drop policy if exists security_audit_events_no_direct_access on public.security_audit_events;
+create policy security_audit_events_no_direct_access on public.security_audit_events
+  for all to anon, authenticated using (false) with check (false);
 drop policy if exists profiles_read on public.profiles;
 drop policy if exists profiles_select_self on public.profiles;
 drop policy if exists profiles_select_self_or_owned_share on public.profiles;
