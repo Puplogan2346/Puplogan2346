@@ -86,6 +86,15 @@ function makeFake() {
         db.list_shares.push(row);
         return Promise.resolve({ data: row, error: null });
       }
+      if (name === "get_list_shares") {
+        const rows = db.list_shares
+          .filter((x) => x.list_id === params.target_list)
+          .map((x) => {
+            const p = db.profiles.find((profile) => profile.id === x.shared_with);
+            return { shared_with: x.shared_with, role: x.role, email: p ? p.email : "", display_name: p ? p.display_name : "" };
+          });
+        return Promise.resolve({ data: rows, error: null });
+      }
       return Promise.resolve({ data: null, error: null });
     },
     auth: {

@@ -176,13 +176,15 @@
     },
 
     async getShares() {
-      const { data } = await sb
-        .from("list_shares")
-        .select("role, shared_with, profiles:shared_with ( email, display_name )")
-        .eq("list_id", this.currentListId);
+      const { data, error } = await sb.rpc("get_list_shares", {
+        target_list: this.currentListId,
+      });
+      if (error) throw error;
       return (data || []).map((s) => ({
-        userId: s.shared_with, role: s.role,
-        email: s.profiles ? s.profiles.email : "", name: s.profiles ? s.profiles.display_name : "",
+        userId: s.shared_with,
+        role: s.role,
+        email: s.email || "",
+        name: s.display_name || "",
       }));
     },
 
