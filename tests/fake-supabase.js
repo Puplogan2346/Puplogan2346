@@ -79,13 +79,6 @@ function makeFake() {
     from: (t) => new Q(t),
     rpc: (name, params) => {
       calls.push({ rpc: name, params });
-      if (name === "share_list_by_email") {
-        const p = db.profiles.find((x) => x.email.toLowerCase() === params.target_email.toLowerCase());
-        if (!p) return Promise.resolve({ data: null, error: { message: "No account found for " + params.target_email } });
-        const row = { list_id: params.target_list, shared_with: p.id, role: params.target_role || "editor" };
-        db.list_shares.push(row);
-        return Promise.resolve({ data: row, error: null });
-      }
       if (name === "get_list_shares") {
         const rows = db.list_shares
           .filter((x) => x.list_id === params.target_list)
@@ -96,6 +89,21 @@ function makeFake() {
         return Promise.resolve({ data: rows, error: null });
       }
       return Promise.resolve({ data: null, error: null });
+    },
+    functions: {
+      invoke: (name, options) => {
+        calls.push({ function: name, options });
+        if (name !== "share-list") return Promise.resolve({ data: null, error: { message: "Unknown function" } });
+        const body = options && options.body ? options.body : {};
+        const email = typeof body.targetEmail === "string" ? body.targetEmail.toLowerCase() : "";
+        const recipient = db.profiles.find((x) => x.email.toLowerCase() === email);
+        if (!recipient) return Promise.resolve({ data: null, error: { message: "Share request could not be completed" } });
+        const existing = db.list_shares.find((x) => x.list_id === body.targetList && x.shared_with === recipient.id);
+        const role = body.targetRole || "editor";
+        if (existing) existing.role = role;
+        else db.list_shares.push({ list_id: body.targetList, shared_with: recipient.id, role });
+        return Promise.resolve({ data: { ok: true, role }, error: null });
+      },
     },
     auth: {
       getSession: () => Promise.resolve({ data: { session: { user: { id: "u1", email: "me@test.dev" } } } }),

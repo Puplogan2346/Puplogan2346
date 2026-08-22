@@ -90,6 +90,20 @@ create table if not exists public.history (
   primary key (list_id, day)
 );
 
+-- Internal audit trail for the Edge Function. It stores a hash of the recipient
+-- identifier rather than the raw email and is not accessible from the browser.
+create table if not exists public.security_audit_events (
+  id bigint generated always as identity primary key,
+  actor uuid not null references auth.users (id) on delete cascade,
+  action text not null check (action in ('list_share_attempt', 'list_share_success', 'list_share_rejected')),
+  list_id uuid references public.lists (id) on delete set null,
+  target_hash text not null,
+  outcome text not null,
+  occurred_at timestamptz not null default now()
+);
+create index if not exists security_audit_events_actor_action_time_idx
+  on public.security_audit_events (actor, action, occurred_at desc);
+
 -- ---------------------------------------------------------------------------
 -- Helper: can the current user access a given list (owner or shared)?
 -- ---------------------------------------------------------------------------
@@ -129,10 +143,19 @@ alter table public.list_shares enable row level security;
 alter table public.tasks       enable row level security;
 alter table public.templates   enable row level security;
 alter table public.history     enable row level security;
+alter table public.security_audit_events enable row level security;
 
--- Profiles contain email addresses. Direct client access is self-only; the
--- owner-scoped sharing RPC below performs the narrowly needed email lookup.
-revoke all on table public.profiles from anon, authenticated;
+-- Client roles receive only the operations required by the application. The
+-- Edge Function owns privileged recipient lookup and share creation.
+revoke all on table public.profiles, public.lists, public.list_shares,
+  public.tasks, public.templates, public.history, public.security_audit_events
+  from anon, authenticated;
+grant select (id, email, display_name) on table public.profiles to authenticated;
+grant update (display_name) on table public.profiles to authenticated;
+grant select, insert, update, delete on table public.lists, public.tasks,
+  public.templates, public.history to authenticated;
+grant select, delete on table public.list_shares to authenticated;
+-- No client role receives any privilege on security_audit_events.
 drop policy if exists profiles_read on public.profiles;
 drop policy if exists profiles_select_self on public.profiles;
 drop policy if exists profiles_select_self_or_owned_share on public.profiles;
@@ -140,8 +163,6 @@ drop policy if exists profiles_update on public.profiles;
 drop policy if exists profiles_update_self on public.profiles;
 -- A user may read their own profile and profiles of people already shared on
 -- lists they own. This supports member management without a global directory.
-grant select (id, email, display_name) on table public.profiles to authenticated;
-grant update (display_name) on table public.profiles to authenticated;
 create policy profiles_select_self_or_owned_share on public.profiles
   for select to authenticated using (
     id = (select auth.uid())
@@ -180,10 +201,11 @@ create policy shares_select on public.list_shares
     or exists (select 1 from public.lists l where l.id = list_id and l.owner = auth.uid())
   );
 drop policy if exists shares_write on public.list_shares;
-create policy shares_write on public.list_shares
-  for all to authenticated using (
-    exists (select 1 from public.lists l where l.id = list_id and l.owner = auth.uid())
-  ) with check (
+drop policy if exists shares_insert on public.list_shares;
+drop policy if exists shares_update on public.list_shares;
+drop policy if exists shares_delete on public.list_shares;
+create policy shares_delete on public.list_shares
+  for delete to authenticated using (
     exists (select 1 from public.lists l where l.id = list_id and l.owner = auth.uid())
   );
 
@@ -216,8 +238,8 @@ create policy history_write on public.history
   with check (public.can_edit_list(list_id));
 
 -- ---------------------------------------------------------------------------
--- Owner-scoped RPCs for sharing. These are the only client paths that expose
--- recipient email addresses, and they never return an unbounded profile list.
+-- Owner-scoped member-list RPC. Recipient lookup and share creation occur only
+-- in the authenticated Edge Function, never through a public privileged RPC.
 -- ---------------------------------------------------------------------------
 create or replace function public.get_list_shares(target_list uuid)
 returns table (shared_with uuid, role text, email text, display_name text)
@@ -239,44 +261,9 @@ $$;
 revoke all on function public.get_list_shares(uuid) from public, anon;
 grant execute on function public.get_list_shares(uuid) to authenticated;
 
-create or replace function public.share_list_by_email(target_list uuid, target_email text, target_role text default 'editor')
-returns public.list_shares
-language plpgsql
-security definer
-set search_path = ''
-as $$
-declare
-  target_user uuid;
-  result public.list_shares;
-begin
-  if coalesce(target_role, 'editor') not in ('editor', 'viewer') then
-    raise exception 'Invalid sharing role.';
-  end if;
-
-  if not exists (
-    select 1 from public.lists as l
-    where l.id = target_list and l.owner = (select auth.uid())
-  ) then
-    raise exception 'You are not permitted to share this list.';
-  end if;
-
-  select p.id into target_user
-  from public.profiles as p
-  where lower(p.email) = lower(trim(target_email));
-  if target_user is null then
-    raise exception 'No account was found for that email address.';
-  end if;
-
-  insert into public.list_shares (list_id, shared_with, role)
-  values (target_list, target_user, coalesce(target_role, 'editor'))
-  on conflict (list_id, shared_with) do update set role = excluded.role
-  returning * into result;
-
-  return result;
-end;
-$$;
-revoke all on function public.share_list_by_email(uuid, text, text) from public, anon;
-grant execute on function public.share_list_by_email(uuid, text, text) to authenticated;
+revoke all on function public.share_list_by_email(uuid, text, text)
+  from public, anon, authenticated;
+drop function if exists public.share_list_by_email(uuid, text, text);
 
 -- ---------------------------------------------------------------------------
 -- Realtime: make sure these tables broadcast changes.
