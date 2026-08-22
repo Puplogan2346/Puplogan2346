@@ -106,7 +106,9 @@ async function testCloud() {
   assert(S.tasks.length === 0, "new list starts empty");
   await S.selectList(listId);
   const share = await S.shareList("teammate@test.dev", "editor");
-  assert(share && share.shared_with === "u2", "shares a list by email");
+  assert(share && share.ok && share.role === "editor", "shares a list through the Edge Function");
+  assert(fake._calls.some((c) => c.function === "share-list"), "invokes the authenticated share-list Edge Function");
+  assert(!fake._calls.some((c) => c.rpc === "share_list_by_email"), "does not invoke the retired privileged share RPC");
   const shares = await S.getShares();
   assert(shares.length === 1 && shares[0].email === "teammate@test.dev", "lists current shares");
   assert(fake._calls.some((c) => c.rpc === "get_list_shares"), "uses the owner-scoped member-list RPC");

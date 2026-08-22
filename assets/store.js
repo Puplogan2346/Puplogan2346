@@ -168,8 +168,12 @@
     },
 
     async shareList(email, role) {
-      const { data, error } = await sb.rpc("share_list_by_email", {
-        target_list: this.currentListId, target_email: email, target_role: role || "editor",
+      const { data, error } = await sb.functions.invoke("share-list", {
+        body: {
+          targetList: this.currentListId,
+          targetEmail: email,
+          targetRole: role || "editor",
+        },
       });
       if (error) throw error;
       return data;
