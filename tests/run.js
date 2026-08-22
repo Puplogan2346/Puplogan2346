@@ -109,6 +109,8 @@ async function testCloud() {
   assert(share && share.shared_with === "u2", "shares a list by email");
   const shares = await S.getShares();
   assert(shares.length === 1 && shares[0].email === "teammate@test.dev", "lists current shares");
+  assert(fake._calls.some((c) => c.rpc === "get_list_shares"), "uses the owner-scoped member-list RPC");
+  assert(!fake._calls.some((c) => c.table === "list_shares" && /profiles/.test(c.cols || "")), "does not join profiles directly from the client");
   let threw = false;
   try { await S.shareList("nobody@nope.dev", "editor"); } catch (e) { threw = true; }
   assert(threw, "rejects sharing to an unknown email");

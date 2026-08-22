@@ -130,14 +130,32 @@ alter table public.tasks       enable row level security;
 alter table public.templates   enable row level security;
 alter table public.history     enable row level security;
 
--- Profiles: anyone signed in can look up profiles (needed to share by email);
--- you may only edit your own.
+-- Profiles contain email addresses. Direct client access is self-only; the
+-- owner-scoped sharing RPC below performs the narrowly needed email lookup.
+revoke all on table public.profiles from anon, authenticated;
 drop policy if exists profiles_read on public.profiles;
-create policy profiles_read on public.profiles
-  for select to authenticated using (true);
+drop policy if exists profiles_select_self on public.profiles;
+drop policy if exists profiles_select_self_or_owned_share on public.profiles;
 drop policy if exists profiles_update on public.profiles;
-create policy profiles_update on public.profiles
-  for update to authenticated using (id = auth.uid());
+drop policy if exists profiles_update_self on public.profiles;
+-- A user may read their own profile and profiles of people already shared on
+-- lists they own. This supports member management without a global directory.
+grant select (id, email, display_name) on table public.profiles to authenticated;
+grant update (display_name) on table public.profiles to authenticated;
+create policy profiles_select_self_or_owned_share on public.profiles
+  for select to authenticated using (
+    id = (select auth.uid())
+    or exists (
+      select 1
+      from public.list_shares as s
+      join public.lists as l on l.id = s.list_id
+      where s.shared_with = profiles.id
+        and l.owner = (select auth.uid())
+    )
+  );
+create policy profiles_update_self on public.profiles
+  for update to authenticated using (id = (select auth.uid()))
+  with check (id = (select auth.uid()));
 
 -- Lists: owner full control; shared users can read.
 drop policy if exists lists_select on public.lists;
@@ -198,24 +216,55 @@ create policy history_write on public.history
   with check (public.can_edit_list(list_id));
 
 -- ---------------------------------------------------------------------------
--- RPC: share a list with someone by email (returns the new share row).
+-- Owner-scoped RPCs for sharing. These are the only client paths that expose
+-- recipient email addresses, and they never return an unbounded profile list.
 -- ---------------------------------------------------------------------------
+create or replace function public.get_list_shares(target_list uuid)
+returns table (shared_with uuid, role text, email text, display_name text)
+language sql
+security invoker
+set search_path = ''
+stable
+as $$
+  select s.shared_with, s.role, p.email, p.display_name
+  from public.list_shares as s
+  join public.profiles as p on p.id = s.shared_with
+  where s.list_id = target_list
+    and exists (
+      select 1 from public.lists as l
+      where l.id = target_list and l.owner = (select auth.uid())
+    )
+  order by p.email;
+$$;
+revoke all on function public.get_list_shares(uuid) from public, anon;
+grant execute on function public.get_list_shares(uuid) to authenticated;
+
 create or replace function public.share_list_by_email(target_list uuid, target_email text, target_role text default 'editor')
 returns public.list_shares
 language plpgsql
-security definer set search_path = public
+security definer
+set search_path = ''
 as $$
 declare
   target_user uuid;
   result public.list_shares;
 begin
-  if not exists (select 1 from public.lists l where l.id = target_list and l.owner = auth.uid()) then
-    raise exception 'Only the list owner can share it.';
+  if coalesce(target_role, 'editor') not in ('editor', 'viewer') then
+    raise exception 'Invalid sharing role.';
   end if;
 
-  select id into target_user from public.profiles where lower(email) = lower(target_email);
+  if not exists (
+    select 1 from public.lists as l
+    where l.id = target_list and l.owner = (select auth.uid())
+  ) then
+    raise exception 'You are not permitted to share this list.';
+  end if;
+
+  select p.id into target_user
+  from public.profiles as p
+  where lower(p.email) = lower(trim(target_email));
   if target_user is null then
-    raise exception 'No account found for %', target_email;
+    raise exception 'No account was found for that email address.';
   end if;
 
   insert into public.list_shares (list_id, shared_with, role)
@@ -226,6 +275,8 @@ begin
   return result;
 end;
 $$;
+revoke all on function public.share_list_by_email(uuid, text, text) from public, anon;
+grant execute on function public.share_list_by_email(uuid, text, text) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Realtime: make sure these tables broadcast changes.
