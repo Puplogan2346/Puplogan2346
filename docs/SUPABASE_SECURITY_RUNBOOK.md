@@ -35,6 +35,28 @@ The baseline security migrations are:
 | `20260822193000_replace_share_rpc_with_edge_function.sql` | Removes the public privileged sharing RPC, restricts direct list-share writes, and creates the audit-log table. |
 | `20260822194000_mark_audit_log_server_only.sql` | Makes the audit log explicitly inaccessible to browser roles. |
 
+### Migration-to-policy matrix
+
+This matrix records the concrete policy, grant, function, and runtime changes. A row marked **superseded** remains important for auditability, but a later row defines the current effective boundary.
+
+| Migration | Concrete database change | Current effective state |
+|---|---|---|
+| `20260822183000_lock_down_profile_directory.sql` | Enables RLS on `profiles`, revokes broad client grants, and creates `profiles_select_self` plus `profiles_update_self`. It also introduced owner-checked `SECURITY DEFINER` functions for member listing and email sharing, each with `search_path = ''` and explicit execution grants. | **Superseded in part.** The self-only select policy and both initial privileged RPC designs were replaced by later migrations. The original self-update principle remains. |
+| `20260822184000_scope_member_list_access.sql` | Replaces the self-only profile read with `profiles_select_self_or_owned_share`. It grants authenticated users only `id`, `email`, and `display_name` reads, limited to their own profile or members of lists they own. It converts `get_list_shares(uuid)` to `SECURITY INVOKER` with `search_path = ''`. | **Active.** This is the current profile-directory and member-list policy boundary. |
+| `20260822193000_replace_share_rpc_with_edge_function.sql` | Creates `security_audit_events`, enables RLS, revokes broad browser grants from application tables, regrants only required operations, removes browser list-share insert and update policies, creates owner-only `shares_delete`, and drops `share_list_by_email`. | **Active.** Browser sharing writes are retired. The JWT-verified `share-list` Edge Function owns recipient lookup and server-side writes. |
+| `20260822194000_mark_audit_log_server_only.sql` | Creates `security_audit_events_no_direct_access` for all operations, both `anon` and `authenticated`, with `USING (false)` and `WITH CHECK (false)`. | **Active.** Audit events are server-only even if a client role later receives an accidental table grant. |
+
+### Current policy and privilege register
+
+| Surface | Current policy or privilege rule | Browser effect |
+|---|---|---|
+| `profiles` | `profiles_select_self_or_owned_share` permits self access and an owner’s read of existing recipients on that owner’s lists. `profiles_update_self` preserves self-only display-name updates. | No global profile directory and no arbitrary email lookup. |
+| `list_shares` | Browser roles receive `SELECT` and owner-checked `DELETE`; direct `INSERT` and `UPDATE` are not granted or policy-authorized. | A user can inspect shares they receive or shares for a list they own. Only an owner can remove a share. |
+| `lists`, `tasks`, `templates`, `history` | Client operations retain explicit grants and operation-specific RLS policies using the existing list-access helpers. | Owners and authorized members see and change only rows allowed by the list relationship. |
+| `security_audit_events` | Browser grants are revoked and the explicit deny-all policy applies to `anon` and `authenticated`. | No direct browser reads or writes. |
+| `get_list_shares(uuid)` | `SECURITY INVOKER`, fixed empty search path, execution granted only to `authenticated`. | Member records are returned only when the caller’s RLS rights already permit them. |
+| `share-list` Edge Function | Active, JWT-verified server-side sharing path. The service role is used only after ownership verification. | The browser does not receive service credentials or call a privileged database sharing RPC. |
+
 Keep the bootstrap schema, migrations, client code, tests, and Edge Function source aligned. A migration is incomplete if the client still calls a retired RPC or reads data through a policy the migration removes.
 
 ## 3. Required process for every database change
