@@ -5,7 +5,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     var calendar: CalendarService
 
-    @State private var claude = ClaudeService()
+    @Environment(ClaudeService.self) private var claude
     @State private var name = ""
     @State private var apiKey = ""
     @State private var keySaved = false

@@ -6,7 +6,7 @@ struct BriefingView: View {
     @Environment(\.dismiss) private var dismiss
     var calendar: CalendarService
 
-    @State private var claude = ClaudeService()
+    @Environment(ClaudeService.self) private var claude
     @State private var briefing = ""
     @State private var isLoading = false
     @State private var errorText: String?
@@ -73,6 +73,9 @@ struct BriefingView: View {
         return lines.joined(separator: "\n")
     }
 
+    // @MainActor so the `briefing`/`isLoading`/`errorText` @State stays on the main actor
+    // even when called from the nonisolated `Task { await generate() }` retry button.
+    @MainActor
     private func generate() async {
         guard claude.hasAPIKey else { return }
         isLoading = true; errorText = nil

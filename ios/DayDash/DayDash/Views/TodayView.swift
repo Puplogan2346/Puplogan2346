@@ -4,6 +4,7 @@ import Charts
 /// The home dashboard: everything about *today* in one calm, premium, scrollable place.
 struct TodayView: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.scenePhase) private var scenePhase
     @State private var calendar = CalendarService()
     @State private var showingSettings = false
     @State private var showingBriefing = false
@@ -14,7 +15,9 @@ struct TodayView: View {
     @State private var encouragement = Theme.encouragement
     @FocusState private var quickAddFocused: Bool
 
-    private let daypart = Theme.Daypart.current()
+    // Recomputed when the app returns to the foreground so the greeting/background stay
+    // correct if DayDash is left open across a daypart boundary or midnight.
+    @State private var daypart = Theme.Daypart.current()
 
     private var dateLine: String {
         let f = DateFormatter()
@@ -72,6 +75,14 @@ struct TodayView: View {
                 // Fire the celebration exactly when the last open task is completed.
                 if new >= 1, old < 1, store.doneTasksToday > 0 {
                     celebrating = true
+                }
+            }
+            .onChange(of: scenePhase) { _, phase in
+                guard phase == .active else { return }
+                // Refresh time-of-day theming and reload today's events on re-entry.
+                daypart = Theme.Daypart.current()
+                if calendar.access == .granted {
+                    Task { await calendar.loadToday() }
                 }
             }
             .overlay {
