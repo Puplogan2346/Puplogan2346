@@ -101,6 +101,15 @@ struct DayEvent: Identifiable, Hashable {
     }
 }
 
+// MARK: - Momentum chart
+
+/// One day's completed-task count, for the Today screen's weekly chart.
+struct DayCompletion: Identifiable {
+    var id: Date { date }
+    let date: Date
+    let count: Int
+}
+
 // MARK: - Chat
 
 struct ChatMessage: Identifiable, Hashable {

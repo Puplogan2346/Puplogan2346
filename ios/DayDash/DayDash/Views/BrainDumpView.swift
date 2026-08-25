@@ -20,6 +20,17 @@ struct BrainDumpView: View {
                                     .foregroundStyle(.secondary)
                             }
                             .padding(.vertical, 2)
+                            .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                Button {
+                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                                        store.makeTask(from: note)
+                                    }
+                                    Haptics.success()
+                                } label: {
+                                    Label("Make task", systemImage: "checklist")
+                                }
+                                .tint(Theme.terracotta)
+                            }
                         }
                         .onDelete { store.deleteNotes(at: $0) }
                     }
@@ -29,7 +40,7 @@ struct BrainDumpView: View {
                         if store.notes.isEmpty {
                             ContentUnavailableView("Clear your head",
                                                    systemImage: "brain.head.profile",
-                                                   description: Text("Type anything below — ideas, worries, reminders. Sort it out later."))
+                                                   description: Text("Type anything below — ideas, worries, reminders. Swipe a thought right later to turn it into a task."))
                         }
                     }
 

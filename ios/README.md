@@ -19,6 +19,12 @@ counterpart to the web Workday Checklist in the repo root.
 - **Daily check-in** — an optional gentle **local notification** at a time you choose.
 - **Home Screen widget** — small/medium widget showing your focus + progress
   (wired as the `DayWidget` target; shows live data once the App Group is enabled on both targets).
+- **Momentum** — a 7-day chart of tasks finished, right on Today (Swift Charts).
+- **Weekly habit dots** — each habit shows its last 7 days at a glance.
+- **Brain Dump → Task** — swipe a captured thought right to promote it to a task.
+- **Celebration** — finish every task for the day and get a confetti moment
+  (respects Reduce Motion).
+- **Welcome screen** — a one-screen first-run hello that asks your name.
 - **Connections** — connects to your **Apple Calendar** on-device via EventKit.
 
 ## Open it on your Mac

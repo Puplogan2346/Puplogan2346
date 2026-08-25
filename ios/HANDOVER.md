@@ -29,6 +29,16 @@ SwiftUI iPhone app: an ADHD-friendly daily dashboard with Claude AI built in.
   ⚠️ **App Groups require a paid Apple Developer account** — a free Apple ID can't provision
   them, so the widget stays on placeholder data when running with a free team. The app and all
   other features are unaffected.
+- **PR #17 was MERGED to `main`** — DayDash v1 (app + widget + UI tests) is the official
+  baseline and compiles/runs verified. Follow-up work happens on fresh branches off `main`.
+- **OPEN WORK — PR #20 (draft):** the "depth & delight" round, on branch
+  `claude/iphone-app-xcode-mac-a6xjjw` (restarted from main). Adds: Momentum 7-day chart on
+  Today (Swift Charts), weekly dots per habit, first-run Welcome screen (skipped when launched
+  with `-skipOnboarding`, which the UI tests now pass), Brain Dump swipe-right → task
+  (`AppStore.makeTask(from:)`), confetti CelebrationOverlay when the day hits 100%
+  (Canvas + TimelineView, respects Reduce Motion). CI is green. **Status: written off-Mac,
+  NOT yet compiled in Xcode.** Next action: pull the branch, ⌘B in Xcode, fix anything red,
+  then mark #20 ready and merge. If it's easier, close #20 and redo the round from main.
 - **Next ideas:** run on a real iPhone (signing), exercise the AI with a real Anthropic key,
   interactive widget button, more connections, unit tests for model/streak logic.
 - **To run/test:** see `START-HERE.md`.
@@ -158,17 +168,37 @@ Foundation Extensions" phase + target dependency (already wired in the pbxproj).
 
 ---
 
+## Continuing from a NEW device or NEW GitHub account
+
+Everything lives in git — no chat history is required. To pick up elsewhere:
+
+1. **Access.** The repo belongs to the `Puplogan2346` GitHub account. From a *different*
+   account you must be able to reach it first — either the repo is public (then just clone),
+   or on the old account open the repo → **Settings → Collaborators → Add people** and invite
+   the new account (full read/write, PRs work normally). Forking also works but detaches you
+   from the open PRs.
+2. **New device (Mac):** install Xcode 16+, then
+   `git clone https://github.com/puplogan2346/puplogan2346.git` and open
+   `ios/DayDash/DayDash.xcodeproj`. `main` = verified v1; branch
+   `claude/iphone-app-xcode-mac-a6xjjw` = the open PR #20 round (needs a build pass).
+3. **New Claude Code session (any account):** connect it to the repo and paste the kickoff
+   block below. This HANDOVER file *is* the memory — read it first, and keep updating the
+   frontier section at the top as work progresses.
+
+---
+
 ## Kickoff block — paste this into a new chat
 
 > I'm continuing work on **DayDash**, a SwiftUI iPhone app in the repo
-> `puplogan2346/puplogan2346` on branch `claude/iphone-app-xcode-mac-a6xjjw` (draft PR #17).
-> The app is under `ios/DayDash/`. Please read `ios/HANDOVER.md` first — it explains the
-> architecture and current state. It's been written but not yet compiled in Xcode.
+> `puplogan2346/puplogan2346`. The app is under `ios/DayDash/`. Read `ios/HANDOVER.md` first —
+> start with the "Where we are right now" section; it is the source of truth for current state.
+> `main` holds the verified v1; branch `claude/iphone-app-xcode-mac-a6xjjw` holds draft PR #20
+> ("depth & delight" round) which still needs an Xcode build pass.
 >
 > [If you have build errors:] Here are the Xcode build errors from ⌘B: `<paste errors>`
 >
-> [Or pick a task:] Help me (a) get a clean build, (b) wire the Home Screen widget target per
-> the App Group for live widget data, or (c) add <feature>.
+> [Or pick a task:] Help me (a) verify + merge PR #20, (b) run the app on a physical iPhone,
+> or (c) add <feature>.
 
 ---
 

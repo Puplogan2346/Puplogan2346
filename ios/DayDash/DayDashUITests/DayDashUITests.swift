@@ -18,6 +18,8 @@ final class DayDashUITests: XCTestCase {
     @MainActor
     func testVisitsEveryTab() throws {
         let app = XCUIApplication()
+        // Suppress the first-run welcome sheet so the tab bar is immediately reachable.
+        app.launchArguments += ["-skipOnboarding"]
         app.launch()
 
         XCTAssertTrue(
@@ -55,6 +57,8 @@ final class DayDashUITests: XCTestCase {
     @MainActor
     func testTabBarHasAllFiveTabs() throws {
         let app = XCUIApplication()
+        // Suppress the first-run welcome sheet so the tab bar is immediately reachable.
+        app.launchArguments += ["-skipOnboarding"]
         app.launch()
 
         let tabBar = app.tabBars.firstMatch

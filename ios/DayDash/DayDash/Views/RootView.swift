@@ -1,6 +1,10 @@
 import SwiftUI
 
 struct RootView: View {
+    @Environment(AppStore.self) private var store
+    @AppStorage("hasOnboarded") private var hasOnboarded = false
+    @State private var showWelcome = false
+
     var body: some View {
         TabView {
             TodayView()
@@ -19,5 +23,17 @@ struct RootView: View {
                 .tabItem { Label("Assistant", systemImage: "sparkles") }
         }
         .tint(Theme.terracotta)
+        .onAppear {
+            // UI tests pass -skipOnboarding so the welcome sheet never blocks the tab bar.
+            guard !CommandLine.arguments.contains("-skipOnboarding") else { return }
+            if !hasOnboarded && store.userName.isEmpty {
+                showWelcome = true
+            } else {
+                hasOnboarded = true
+            }
+        }
+        .sheet(isPresented: $showWelcome, onDismiss: { hasOnboarded = true }) {
+            WelcomeView()
+        }
     }
 }
